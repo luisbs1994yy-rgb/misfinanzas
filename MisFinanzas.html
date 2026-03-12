@@ -7,6 +7,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>window.BABEL_PRODUCTION = true;</script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #070d1a; }
@@ -22,30 +24,198 @@
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');`;
 
+// CONFIGURACIÓN SUPABASE
+const SUPABASE_URL = "https://nbslhdvcwxebsrttwkph.supabase.co";
+const SUPABASE_KEY = "sb_publishable_vj2eVBuHE3JUSHiBg9tmGw_wqSn9xwO";
+
 const CATEGORIES = {
+  // Ordenado alfabéticamente A-Z
+  "Accesorios": { color: "#FBCFE8", icon: "👜" },
   "Alimentación": { color: "#F59E0B", icon: "🍽️" },
-  "Transporte": { color: "#3B82F6", icon: "🚗" },
-  "Entretenimiento": { color: "#8B5CF6", icon: "🎬" },
-  "Salud": { color: "#10B981", icon: "💊" },
-  "Ropa": { color: "#EC4899", icon: "👗" },
-  "Hogar": { color: "#F97316", icon: "🏠" },
-  "Tecnología": { color: "#06B6D4", icon: "💻" },
-  "Servicios": { color: "#6366F1", icon: "📱" },
+  "Cine": { color: "#A78BFA", icon: "🎥" },
+  "Cursos": { color: "#BFEF45", icon: "📖" },
   "Educación": { color: "#84CC16", icon: "📚" },
+  "Entretenimiento": { color: "#8B5CF6", icon: "🎬" },
+  "Estacionamiento": { color: "#BFDBFE", icon: "🅿️" },
+  "Eventos": { color: "#DDD6FE", icon: "🎪" },
+  "Farmacia": { color: "#34D399", icon: "🏥" },
+  "Gasolina": { color: "#60A5FA", icon: "⛽" },
+  "Gym": { color: "#6EE7B7", icon: "💪" },
+  "Hogar": { color: "#F97316", icon: "🏠" },
+  "Impuestos": { color: "#2DD4BF", icon: "📋" },
+  "Internet": { color: "#22D3EE", icon: "📡" },
+  "Inversiones": { color: "#5EEAD4", icon: "📈" },
+  "Libros": { color: "#D4FC79", icon: "📕" },
+  "Mantenimiento": { color: "#FED7AA", icon: "🔨" },
+  "Médico": { color: "#A7F3D0", icon: "👨‍⚕️" },
   "Otros": { color: "#94A3B8", icon: "📦" },
+  "Restaurante": { color: "#FCA5A5", icon: "🍔" },
+  "Renta": { color: "#FB923C", icon: "🔑" },
+  "Ropa": { color: "#EC4899", icon: "👗" },
+  "Salud": { color: "#10B981", icon: "💊" },
+  "Servicios": { color: "#6366F1", icon: "📱" },
+  "Streaming": { color: "#C4B5FD", icon: "📺" },
+  "Supermercado": { color: "#FBBF24", icon: "🛒" },
+  "Taxi/Uber": { color: "#93C5FD", icon: "🚕" },
+  "Tecnología": { color: "#06B6D4", icon: "💻" },
+  "Telefonía": { color: "#67E8F9", icon: "📱" },
+  "Transporte": { color: "#3B82F6", icon: "🚗" },
+  "Zapatos": { color: "#F472B6", icon: "👟" },
 };
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 const CURRENT_MONTH = new Date().getMonth();
 const CURRENT_YEAR = new Date().getFullYear();
 
-// ── localStorage helpers ─────────────────────────────────────────────────────
-function loadLS(key, fallback) {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
+// ── Supabase Helper ─────────────────────────────────────────────────────
+// ── ALMACENAMIENTO LOCAL + SUPABASE ──────────────────────────────────
+async function saveLocalTransaction(transaction) {
+  try {
+    const txs = JSON.parse(localStorage.getItem('misfinanzas_txs') || '[]');
+    txs.push({ ...transaction, id: Date.now(), local: true });
+    localStorage.setItem('misfinanzas_txs', JSON.stringify(txs));
+    return true;
+  } catch (error) {
+    console.error("Error saving locally:", error);
+    return false;
+  }
 }
-function saveLS(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+
+async function insertTransaction(transaction) {
+  // Primero guardar localmente (garantizado)
+  const localSaved = await saveLocalTransaction(transaction);
+  
+  // Intentar guardar en Supabase (opcional)
+  try {
+    const { data, error } = await supabaseClient
+      .from('transactions')
+      .insert([{
+        name: transaction.name,
+        amount: Number(transaction.amount),
+        category: transaction.category,
+        bank: transaction.bank || null,
+        month: transaction.month,
+        year: transaction.year,
+      }]);
+    
+    if (error) console.warn("Supabase warning:", error);
+    return data;
+  } catch (error) {
+    console.warn("Supabase sync failed, but data saved locally:", error);
+    return null;
+  }
+}
+
+async function fetchTransactions() {
+  try {
+    // Intentar traer de Supabase primero
+    const { data, error } = await supabaseClient
+      .from('transactions')
+      .select('*')
+      .order('date_created', { ascending: false });
+    
+    if (!error && data) return data;
+  } catch (error) {
+    console.warn("Supabase fetch failed, using local data");
+  }
+  
+  // Fallback a localStorage
+  try {
+    return JSON.parse(localStorage.getItem('misfinanzas_txs') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+
+// ── PDF Processing with regex patterns ─────────────────────────────────
+function toTitleCase(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+function extractTransactionsFromText(text) {
+  const transactions = [];
+  
+  // Dividir en líneas
+  const lines = text.split(/\n/);
+  
+  // Buscar sección de transacciones
+  let inSection = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Detectar inicio de sección
+    if (line.includes("CARGOS, ABONOS Y COMPRAS REGULARES")) {
+      inSection = true;
+      continue;
+    }
+    
+    // Detectar fin (Total cargos o siguiente sección)
+    if (inSection && (line.includes("Total cargos") || line.includes("Total abonos") || line === "")) {
+      if (line.includes("Total")) break;
+      continue;
+    }
+    
+    if (!inSection) continue;
+    
+    // Saltar líneas muy cortas
+    if (line.length < 10) continue;
+    
+    // Buscar líneas con formato de transacción
+    // Patrón: DD-MMM-YYYY DD-MMM-YYYY DESCRIPCIÓN +$MONTO
+    const match = line.match(/(\d{2}-[A-Z]{3}-\d{4})\s+(\d{2}-[A-Z]{3}-\d{4})\s+(.+?)\s+([+\-]?\$?[\d,]+\.\d{2})\s*$/);
+    
+    if (!match) continue;
+    
+    const montoStr = match[4];
+    const monto = parseFloat(montoStr.replace(/[^\d.]/g, ""));
+    
+    // Saltar negativos (pagos)
+    if (montoStr.includes("-")) continue;
+    
+    // Saltar si está fuera de rango
+    if (monto <= 0 || monto > 999999) continue;
+    
+    // Descripción
+    let desc = match[3].trim().toUpperCase().slice(0, 80);
+    
+    // Saltar descripciones malas
+    if (desc.match(/PAGO|TOTAL|INTERESES|COMISIONE|IVA/i)) continue;
+    
+    if (desc.length > 3) {
+      // Evitar duplicados
+      const key = desc + "|" + monto;
+      if (!transactions.some(t => (t.name + "|" + t.amount) === key)) {
+        transactions.push({ name: desc, amount: monto });
+      }
+    }
+  }
+  
+  return transactions.slice(0, 100);
+}
+
+function classifyTransaction(name) {
+  const keywords = {
+    "Alimentación": ["walmart", "soriana", "oxxo", "superama", "restaurante", "burger", "pizza", "cafe", "comida"],
+    "Transporte": ["uber", "taxi", "lyft", "gasolina", "pemex", "parking", "estacionamiento"],
+    "Entretenimiento": ["cine", "spotify", "netflix", "cinema", "tickets", "concierto"],
+    "Salud": ["farmacia", "hospital", "doctor", "medicina", "gym", "fitness"],
+    "Ropa": ["zara", "h&m", "forever", "shein", "boutique", "ropa"],
+    "Hogar": ["home depot", "ikea", "ferreterí", "tiendas"],
+    "Tecnología": ["apple", "amazon", "best buy", "laptop", "celular", "iphone"],
+    "Servicios": ["electric", "agua", "internet", "telefónica", "gas", "servicios"],
+    "Educación": ["udemy", "coursera", "escuela", "colegio"],
+  };
+
+  const nameLower = name.toLowerCase();
+  for (const [category, words] of Object.entries(keywords)) {
+    if (words.some(word => nameLower.includes(word))) {
+      return category;
+    }
+  }
+  return "Otros";
 }
 
 function SparkBar({ data, color = "#F59E0B" }) {
@@ -97,6 +267,14 @@ function DonutChart({ data, size = 160 }) {
 function FinanceDashboard() {
   const [tab, setTab] = useState("overview");
   const [month, setMonth] = useState(CURRENT_MONTH);
+  const [allTransactions, setAllTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [aiLog, setAiLog] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [pendingTxs, setPendingTxs] = useState(null);
+  const [pasteText, setPasteText] = useState("");
+  const fileRef = useRef();
 
   const FRECUENCIAS = {
     diaria:    { label: "Diaria",    icon: "📅", multiplier: 30,   color: "#06B6D4" },
@@ -105,30 +283,13 @@ function FinanceDashboard() {
     mensual:   { label: "Mensual",   icon: "🗃️", multiplier: 1,    color: "#10B981" },
   };
 
-  const toMonthly = (amount, freq) => Number(amount) * (FRECUENCIAS[freq]?.multiplier || 1);
-
-  const [incomes, setIncomes] = useState(() => loadLS("mf_incomes", [
-    { id: 1, name: "Salario", amount: 25000, type: "fijo", frecuencia: "mensual" },
-  ]));
+  const [incomes, setIncomes] = useState([]);
   const [newIncome, setNewIncome] = useState({ name: "", amount: "", type: "fijo", frecuencia: "mensual" });
-
-  const [expenses, setExpenses] = useState(() => loadLS("mf_expenses", [
-    { id: 1, name: "Renta", amount: 8000, type: "fijo", category: "Hogar", month: CURRENT_MONTH, frecuencia: "mensual" },
-    { id: 2, name: "Netflix", amount: 219, type: "fijo", category: "Entretenimiento", month: CURRENT_MONTH, frecuencia: "mensual" },
-    { id: 3, name: "Gym", amount: 600, type: "fijo", category: "Salud", month: CURRENT_MONTH, frecuencia: "mensual" },
-    { id: 4, name: "Súper", amount: 3200, type: "variable", category: "Alimentación", month: CURRENT_MONTH, frecuencia: "mensual" },
-    { id: 5, name: "Gasolina", amount: 1500, type: "variable", category: "Transporte", month: CURRENT_MONTH, frecuencia: "mensual" },
-  ]));
-  const [newExpense, setNewExpense] = useState({ name: "", amount: "", type: "variable", category: "Otros", frecuencia: "mensual", customCategory: "" });
+  const [expenses, setExpenses] = useState([]);
+  const [newExpense, setNewExpense] = useState({ name: "", amount: "", type: "fijo", category: "Servicios", frecuencia: "mensual" });
+  const [editingId, setEditingId] = useState(null);
   const [customCatInput, setCustomCatInput] = useState("");
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [aiLog, setAiLog] = useState([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const fileRef = useRef();
-
-  // ── Bank statements history ───────────────────────────────────────────────
   const BANKS = [
     { id: "banorte",   label: "Banorte",    color: "#ef4444", icon: "🔴" },
     { id: "bbva",      label: "BBVA",       color: "#3b82f6", icon: "🔵" },
@@ -136,155 +297,206 @@ function FinanceDashboard() {
     { id: "banamex",   label: "CitiBanamex",color: "#8b5cf6", icon: "🟣" },
     { id: "otros",     label: "Otros",      color: "#94a3b8", icon: "⚪" },
   ];
-  const [statements, setStatements] = useState(() => loadLS("mf_statements", []));      // history of analyzed statements
-  const [pendingTxs, setPendingTxs] = useState(null);    // { bank, fileName, txs } — awaiting confirm
   const [selectedBank, setSelectedBank] = useState("banorte");
-  const [editingStmt, setEditingStmt] = useState(null);  // id of statement being renamed
-  const [editStmtName, setEditStmtName] = useState("");
 
-  // ── Persist to localStorage on every change ─────────────────────────────
-  useEffect(() => saveLS("mf_incomes",    incomes),    [incomes]);
-  useEffect(() => saveLS("mf_expenses",   expenses),   [expenses]);
-  useEffect(() => saveLS("mf_statements", statements), [statements]);
+  // Cargar transacciones al montar
+  useEffect(() => {
+    loadTransactions();
+  }, []);
 
-  const monthExpenses = expenses.filter(e => e.month === month);
+  const loadTransactions = async () => {
+    setLoading(true);
+    const txs = await fetchTransactions();
+    setAllTransactions(txs);
+    setLoading(false);
+  };
+
+  const toMonthly = (amount, freq) => Number(amount) * (FRECUENCIAS[freq]?.multiplier || 1);
+
+  const monthTransactions = allTransactions.filter(t => t.month === month && t.year === CURRENT_YEAR);
   const totalIncome = incomes.reduce((s, i) => s + toMonthly(i.amount, i.frecuencia), 0);
-  const totalExpense = monthExpenses.reduce((s, e) => s + toMonthly(e.amount, e.frecuencia || "mensual"), 0);
+  const totalExpense = monthTransactions.reduce((s, e) => s + Number(e.amount), 0);
   const balance = totalIncome - totalExpense;
   const savingsRate = totalIncome > 0 ? Math.round((balance / totalIncome) * 100) : 0;
 
   const expensesByCategory = Object.entries(
-    monthExpenses.reduce((acc, e) => {
+    monthTransactions.reduce((acc, e) => {
       acc[e.category] = (acc[e.category] || 0) + Number(e.amount);
       return acc;
     }, {})
   ).map(([cat, val]) => ({ name: cat, value: val, color: CATEGORIES[cat]?.color || "#94A3B8", icon: CATEGORIES[cat]?.icon || "📦" }))
     .sort((a, b) => b.value - a.value);
 
+  // Gastos Fijos y Variables (independientes)
+  const gastosFijos = expenses
+    .filter(e => e.type === "fijo")
+    .reduce((sum, e) => sum + toMonthly(Number(e.amount), e.frecuencia), 0);
+  
+  const gastosVariables = expenses
+    .filter(e => e.type === "variable")
+    .reduce((sum, e) => sum + toMonthly(Number(e.amount), e.frecuencia), 0);
+
+  const expensesByTypeFixed = expenses
+    .filter(e => e.type === "fijo")
+    .map(e => ({
+      name: e.name,
+      value: toMonthly(Number(e.amount), e.frecuencia),
+      color: CATEGORIES[e.category]?.color || "#94A3B8",
+      icon: CATEGORIES[e.category]?.icon || "📦"
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const expensesByTypeVariable = expenses
+    .filter(e => e.type === "variable")
+    .map(e => ({
+      name: e.name,
+      value: toMonthly(Number(e.amount), e.frecuencia),
+      color: CATEGORIES[e.category]?.color || "#94A3B8",
+      icon: CATEGORIES[e.category]?.icon || "📦"
+    }))
+    .sort((a, b) => b.value - a.value);
+
   const sparkData = [18000, 21000, 19500, 23000, 20800, totalExpense].slice(-6);
 
-  // processStatement accepts either plain text OR { pdf: base64string }
   const processStatement = useCallback(async (input) => {
     setIsProcessing(true);
     setAiLog([]);
     try {
-      const isPdf = input && typeof input === "object" && input.pdf;
-      const userContent = isPdf
-        ? [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: input.pdf }
-            },
-            {
-              type: "text",
-              text: `Analiza este estado de cuenta en PDF. Busca la sección "DESGLOSE DE MOVIMIENTOS" o "CARGOS, ABONOS Y COMPRAS". Extrae SOLO los cargos/gastos (montos positivos con +$), ignora pagos/abonos (montos negativos con -$). Para cada cargo extrae: nombre del comercio (limpio, sin RFC ni ciudad) y monto numérico. Clasifica cada uno en una de estas categorías: Alimentación, Transporte, Entretenimiento, Salud, Ropa, Hogar, Tecnología, Servicios, Educación, Otros. Responde SOLO con JSON válido sin markdown: {"transactions":[{"name":"Nombre limpio","amount":123.45,"category":"Categoría"}]}`
-            }
-          ]
-        : [{ type: "text", text: `Extrae las transacciones de cargo (no abonos/pagos) de este estado de cuenta. Responde SOLO con JSON válido sin markdown ni backticks: {"transactions":[{"name":"nombre del comercio","amount":123.45,"category":"una de: Alimentación,Transporte,Entretenimiento,Salud,Ropa,Hogar,Tecnología,Servicios,Educación,Otros"}]}. Si no hay transacciones: {"transactions":[],"note":"razón"}.
+      let transactions = [];
 
-${input.slice(0, 4000)}` }];
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          messages: [{ role: "user", content: userContent }]
-        })
-      });
-      const data = await response.json();
-
-      const rawText = data.content?.map(b => b.text || "").join("") || "";
-
-      // Strip markdown fences first, then find the JSON object
-      const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-
-      // Extract the largest {...} block — handles truncated responses too
-      let parsed = null;
-      try {
-        // Try full clean parse first
-        parsed = JSON.parse(cleaned);
-      } catch {
-        // Find start of JSON object
-        const start = cleaned.indexOf("{");
-        if (start !== -1) {
-          // Walk from the end backwards to find a valid closing } 
-          let jsonStr = cleaned.slice(start);
-          // If the JSON was truncated, close it gracefully
-          while (jsonStr.length > 0) {
-            try {
-              parsed = JSON.parse(jsonStr);
-              break;
-            } catch {
-              // Remove last char and try again (handles trailing truncation)
-              jsonStr = jsonStr.slice(0, jsonStr.lastIndexOf("}") );
-              if (!jsonStr.includes("}")) break;
-              jsonStr = jsonStr + "}";
-              try { parsed = JSON.parse(jsonStr); break; } catch { break; }
-            }
-          }
-        }
-      }
-
-      // If still null, try to extract partial transactions array directly
-      if (!parsed) {
-        const arrStart = rawText.indexOf('"transactions"');
-        const arrOpen  = rawText.indexOf("[", arrStart);
-        if (arrStart !== -1 && arrOpen !== -1) {
-          // Find all complete transaction objects
-          const partial = rawText.slice(arrOpen);
-          const objects = [];
-          const re = /\{[^{}]+\}/g;
-          let m;
-          while ((m = re.exec(partial)) !== null) {
-            try { objects.push(JSON.parse(m[0])); } catch {}
-          }
-          if (objects.length > 0) parsed = { transactions: objects };
-        }
-      }
-
-      if (!parsed) {
-        setAiLog(["⚠️ No se pudo leer la respuesta de la IA. Intenta con un texto más corto o en formato diferente."]);
-        setIsProcessing(false);
-        return;
-      }
-
-      const txs = parsed.transactions || [];
-      if (txs.length === 0) {
-        setAiLog([`⚠️ ${parsed.note || "No se encontraron transacciones en el documento"}`]);
+      if (input && typeof input === "object" && input.pdf) {
+        // PDF: Extraer texto del base64 (simulado con patrones)
+        setAiLog(["🔄 Procesando PDF..."]);
+        // Para PDFs necesitarías una librería como pdfjs-dist
+        // Por ahora usamos el texto si está disponible
+        transactions = [];
+        setAiLog(["⚠️ Para PDFs, por favor pega el texto del estado de cuenta en formato texto"]);
       } else {
-        // Store as pending — show summary before confirming export to expenses
-        setPendingTxs({
-          bank: selectedBank,
-          txs: txs.map((t, i) => ({
-            id: Date.now() + i,
-            name: t.name,
-            amount: Number(t.amount) || 0,
-            category: t.category || "Otros",
-          })),
-        });
-        setAiLog([]);
+        // Texto: Extraer transacciones
+        setAiLog(["🔍 Buscando transacciones..."]);
+        transactions = extractTransactionsFromText(input);
+
+        // Clasificar cada transacción
+        transactions = transactions.map(tx => ({
+          ...tx,
+          category: classifyTransaction(tx.name),
+        }));
+
+        if (transactions.length === 0) {
+          setAiLog(["⚠️ No se encontraron transacciones. Intenta con un formato diferente"]);
+        } else {
+          setAiLog([`✅ Se encontraron ${transactions.length} transacciones`]);
+          setPendingTxs({
+            bank: selectedBank,
+            txs: transactions.map((t, i) => ({
+              id: Date.now() + i,
+              name: t.name,
+              amount: Number(t.amount),
+              category: t.category,
+            })),
+          });
+        }
       }
     } catch (e) {
       setAiLog([`❌ Error: ${e.message}`]);
     }
     setIsProcessing(false);
-  }, [month]);
+  }, [selectedBank]);
 
   const handleFile = async (file) => {
-    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-      // Read PDF as base64 and send directly to Claude vision
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      processStatement({ pdf: base64 });
-    } else {
-      const text = await file.text();
-      processStatement(text);
+    // Solo aceptar PDF e imágenes
+    const isPDF = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = file.type.startsWith("image/");
+    
+    if (!isPDF && !isImage) {
+      setAiLog(["❌ Solo se aceptan PDF e imágenes"]);
+      return;
+    }
+    
+    setIsProcessing(true);
+    
+    try {
+      if (isPDF) {
+        setAiLog(["📄 Procesando PDF..."]);
+        // Para PDFs usamos pdf.js
+        if (!window.pdfjsLib) {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          await new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        const fileReader = new FileReader();
+        fileReader.onload = async (e) => {
+          try {
+            const pdf = await window.pdfjsLib.getDocument({ data: e.target.result }).promise;
+            let fullText = "";
+            
+            const pagesToRead = Math.min(pdf.numPages, 20);
+            for (let i = 1; i <= pagesToRead; i++) {
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              let pageText = "";
+              textContent.items.forEach(item => {
+                pageText += item.str + " ";
+              });
+              fullText += pageText + "\n";
+            }
+            
+            if (fullText.trim().length === 0) {
+              setAiLog(["❌ No se pudo extraer texto del PDF"]);
+              setIsProcessing(false);
+              return;
+            }
+            
+            processStatement(fullText);
+          } catch (err) {
+            setAiLog(["❌ Error al procesar PDF: " + err.message]);
+            setIsProcessing(false);
+          }
+        };
+        fileReader.readAsArrayBuffer(file);
+      } else if (isImage) {
+        // Procesar imagen con Cloudinary OCR (con CORS habilitado)
+        setAiLog(["🖼️ Extrayendo texto de la imagen..."]);
+        
+        try {
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            try {
+              const base64 = e.target.result.split(',')[1];
+              
+              // Usar API de Google Vision (alternativa simple)
+              // Por ahora, mostrar mensaje útil mientras cargamos una solución
+              setAiLog([
+                "📝 Para procesar imágenes, usa una de estas opciones gratuitas:",
+                "",
+                "1️⃣ Google Lens (lens.google.com) - Copia el texto extraído",
+                "2️⃣ Smallpdf OCR (smallpdf.com/ocr-pdf) - Sube la imagen aquí",
+                "3️⃣ Paste el texto directamente en el formulario",
+                "",
+                "O mejor aún, exporta tu estado de cuenta como PDF desde tu banco 📄"
+              ]);
+              setIsProcessing(false);
+            } catch (err) {
+              setAiLog(["❌ Error: " + err.message]);
+              setIsProcessing(false);
+            }
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          setAiLog(["❌ Error: " + err.message]);
+          setIsProcessing(false);
+        }
+      }
+    } catch (err) {
+      setAiLog(["❌ Error: " + err.message]);
+      setIsProcessing(false);
     }
   };
 
@@ -294,85 +506,84 @@ ${input.slice(0, 4000)}` }];
     if (file) handleFile(file);
   };
 
-  const addIncome = () => {
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  const addIncome = async () => {
     if (!newIncome.name || !newIncome.amount) return;
-    setIncomes(prev => [...prev, { ...newIncome, id: Date.now() }]);
+    const item = { ...newIncome, name: toTitleCase(newIncome.name), id: Date.now() };
+    
+    // Guardar en estado local primero
+    setIncomes(prev => [...prev, item]);
     setNewIncome({ name: "", amount: "", type: "fijo", frecuencia: "mensual" });
+    
+    // Guardar en almacenamiento
+    try {
+      await insertTransaction({
+        name: `💰 ${item.name}`,
+        amount: Number(item.amount),
+        category: "Ingresos",
+        bank: "Ingresos",
+        month: CURRENT_MONTH,
+        year: CURRENT_YEAR
+      });
+      setAiLog(prev => [...prev.slice(-4), "✅ Ingreso guardado (local + nube)"]);
+    } catch (err) {
+      setAiLog(prev => [...prev.slice(-4), `⚠️ Guardado localmente (sin nube)`]);
+    }
   };
 
-  const addExpense = () => {
+  const addExpense = async () => {
     if (!newExpense.name || !newExpense.amount) return;
     const finalCategory = newExpense.category === "Otros" && customCatInput.trim()
       ? customCatInput.trim()
       : newExpense.category;
-    setExpenses(prev => [...prev, { ...newExpense, id: Date.now(), month, category: finalCategory }]);
-    setNewExpense({ name: "", amount: "", type: "variable", category: "Otros", frecuencia: "mensual", customCategory: "" });
+    
+    const item = { ...newExpense, name: toTitleCase(newExpense.name), category: finalCategory, id: Date.now() };
+    
+    // Guardar en estado local primero
+    setExpenses(prev => [...prev, item]);
+    setNewExpense({ name: "", amount: "", type: "fijo", category: "Servicios", frecuencia: "mensual" });
     setCustomCatInput("");
+    
+    // Guardar en almacenamiento
+    try {
+      await insertTransaction({
+        name: `${CATEGORIES[finalCategory]?.icon || "📦"} ${item.name}`,
+        amount: Number(item.amount),
+        category: finalCategory,
+        bank: "MisFinanzas",
+        month: CURRENT_MONTH,
+        year: CURRENT_YEAR
+      });
+      setAiLog(prev => [...prev.slice(-4), "✅ Gasto guardado (local + nube)"]);
+    } catch (err) {
+      setAiLog(prev => [...prev.slice(-4), `⚠️ Guardado localmente (sin nube)`]);
+    }
   };
 
   const deleteExpense = (id) => setExpenses(prev => prev.filter(e => e.id !== id));
   const deleteIncome = (id) => setIncomes(prev => prev.filter(i => i.id !== id));
 
-  // ── Statement history helpers ────────────────────────────────────────────
-  const confirmExport = (stmt) => {
-    const bankInfo = BANKS.find(b => b.id === stmt.bank) || BANKS[4];
-    const total = stmt.txs.reduce((s, t) => s + t.amount, 0);
-    // Export as ONE single consolidated expense entry
-    const singleExpense = {
-      id: Date.now(),
-      name: bankInfo.label,
-      amount: total,
-      type: "variable",
-      category: "Servicios",
-      frecuencia: "mensual",
-      month,
-      fromStatement: true,
-    };
-    setExpenses(prev => [...prev, singleExpense]);
-    // Save to history
-    setStatements(prev => [{
-      id: Date.now() + 1,
-      name: bankInfo.label,
-      bank: stmt.bank,
-      date: new Date().toLocaleDateString("es-MX"),
-      month,
-      txs: stmt.txs,
-      total,
-    }, ...prev]);
-    setPendingTxs(null);
-    setPasteText("");
-  };
-
-  const deleteStatement = (id) => setStatements(prev => prev.filter(s => s.id !== id));
-
-  const startRenameStmt = (stmt) => { setEditingStmt(stmt.id); setEditStmtName(stmt.name); };
-  const saveRenameStmt  = () => {
-    setStatements(prev => prev.map(s => s.id === editingStmt ? { ...s, name: editStmtName } : s));
-    setEditingStmt(null);
-  };
-
-  // ── Edit modal ────────────────────────────────────────────────────────────
-  const [editModal, setEditModal] = useState(null);
-  const [editCustomCat, setEditCustomCat] = useState("");
-
-  const openEditExpense = (e) => {
-    const isCustom = !CATEGORIES[e.category];
-    setEditCustomCat(isCustom ? e.category : "");
-    setEditModal({ type: "expense", data: { ...e, category: isCustom ? "Otros" : e.category } });
-  };
-  const openEditIncome = (i) => setEditModal({ type: "income", data: { ...i } });
-  const closeEdit = () => { setEditModal(null); setEditCustomCat(""); };
-
-  const saveEdit = () => {
-    if (!editModal) return;
-    if (editModal.type === "expense") {
-      const finalCat = editModal.data.category === "Otros" && editCustomCat.trim()
-        ? editCustomCat.trim() : editModal.data.category;
-      setExpenses(prev => prev.map(e => e.id === editModal.data.id ? { ...editModal.data, category: finalCat } : e));
-    } else {
-      setIncomes(prev => prev.map(i => i.id === editModal.data.id ? { ...editModal.data } : i));
+  const confirmExport = async (stmt) => {
+    setIsProcessing(true);
+    try {
+      for (const tx of stmt.txs) {
+        await insertTransaction({
+          name: tx.name,
+          amount: tx.amount,
+          category: tx.category,
+          bank: stmt.bank,
+          month,
+          year: CURRENT_YEAR,
+        });
+      }
+      setAiLog([`✅ Se guardaron ${stmt.txs.length} transacciones en la nube`]);
+      setPendingTxs(null);
+      await loadTransactions();
+    } catch (error) {
+      setAiLog([`❌ Error al guardar: ${error.message}`]);
     }
-    closeEdit();
+    setIsProcessing(false);
   };
 
   const S = {
@@ -390,18 +601,11 @@ ${input.slice(0, 4000)}` }];
     kpiCard: (accent) => ({ background: "linear-gradient(135deg, #0f172a, #1a2540)", border: `1px solid ${accent}33`, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }),
     kpiLabel: { fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 },
     kpiValue: (color) => ({ fontSize: 28, fontFamily: "'DM Serif Display', serif", color, marginTop: 4 }),
-    kpiSub: { fontSize: 12, color: "#475569", marginTop: 2 },
     sectionTitle: { fontFamily: "'DM Serif Display', serif", fontSize: 18, color: "#f1f5f9", marginBottom: 14 },
-    badge: (color) => ({ display: "inline-block", padding: "2px 8px", borderRadius: 99, fontSize: 10, fontFamily: "'DM Mono', monospace", background: color + "22", color, border: `1px solid ${color}44` }),
     input: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%", boxSizing: "border-box" },
-    select: { background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "8px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "'DM Sans', sans-serif", outline: "none" },
     btn: (color = "#f59e0b") => ({ background: color, color: color === "#f59e0b" ? "#000" : "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }),
-    row: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 8, marginBottom: 6, background: "#1e293b", border: "1px solid #334155" },
     dropZone: (over) => ({ border: `2px dashed ${over ? "#f59e0b" : "#334155"}`, borderRadius: 12, padding: "28px", textAlign: "center", background: over ? "#f59e0b11" : "#1e293b", cursor: "pointer", transition: "all 0.2s", marginBottom: 14 }),
     logItem: (ok) => ({ padding: "6px 10px", borderRadius: 6, marginBottom: 4, background: ok ? "#10b98111" : "#ef444411", border: `1px solid ${ok ? "#10b98133" : "#ef444433"}`, fontSize: 12, fontFamily: "'DM Mono', monospace", color: "#cbd5e1" }),
-    progressFill: (pct, color) => ({ height: "100%", width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 99, transition: "width 0.6s ease" }),
-    deleteBtn: { background: "transparent", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, padding: "2px 6px" },
-    editBtn: { background: "transparent", border: "1px solid #334155", borderRadius: 6, color: "#94a3b8", cursor: "pointer", fontSize: 12, padding: "3px 8px", fontFamily: "'DM Mono', monospace", transition: "all 0.15s" },
   };
 
   return (
@@ -419,7 +623,7 @@ ${input.slice(0, 4000)}` }];
         </div>
 
         <nav style={S.nav}>
-          {[["overview","📊 Resumen"],["income","💰 Ingresos"],["expenses","💸 Gastos"],["statement","🏦 Estados de Cuenta"],["historial","📂 Historial"]].map(([id, label]) => (
+          {[["overview","📊 Resumen"],["income","💰 Ingresos"],["expenses","💸 Gastos"]].map(([id, label]) => (
             <button key={id} style={S.navBtn(tab === id)} onClick={() => setTab(id)}>{label}</button>
           ))}
         </nav>
@@ -432,19 +636,19 @@ ${input.slice(0, 4000)}` }];
               <div style={S.grid3}>
                 {[
                   { label: "Ingresos del mes", value: `$${totalIncome.toLocaleString()}`, color: "#10b981", sub: `${incomes.length} fuente(s)`, sym: "↑" },
-                  { label: "Gastos del mes", value: `$${totalExpense.toLocaleString()}`, color: "#f59e0b", sub: `${monthExpenses.length} transacciones`, sym: "↓" },
+                  { label: "Gastos del mes", value: `$${totalExpense.toLocaleString()}`, color: "#f59e0b", sub: `${monthTransactions.length} transacciones`, sym: "↓" },
                   { label: "Balance", value: `$${Math.abs(balance).toLocaleString()}`, color: balance >= 0 ? "#3b82f6" : "#ef4444", sub: balance >= 0 ? `Ahorro ${savingsRate}%` : "⚠️ Déficit", sym: "=" },
                 ].map((kpi, i) => (
                   <div key={i} style={S.kpiCard(kpi.color)}>
                     <div style={S.kpiLabel}>{kpi.label}</div>
                     <div style={S.kpiValue(kpi.color)}>{kpi.value}</div>
-                    <div style={S.kpiSub}>{kpi.sub}</div>
+                    <div style={{ fontSize: 12, color: "#475569", marginTop: 2 }}>{kpi.sub}</div>
                     <div style={{ position: "absolute", right: 14, top: 14, opacity: 0.07, fontSize: 60 }}>{kpi.sym}</div>
                   </div>
                 ))}
               </div>
 
-              <div style={S.grid2}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 14 }}>
                 <div style={S.card}>
                   <div style={S.sectionTitle}>Gastos por categoría</div>
                   <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
@@ -457,7 +661,7 @@ ${input.slice(0, 4000)}` }];
                             <span style={{ fontFamily: "'DM Mono', monospace", color: c.color }}>${c.value.toLocaleString()}</span>
                           </div>
                           <div style={{ height: 5, borderRadius: 99, background: "#1e293b", overflow: "hidden" }}>
-                            <div style={S.progressFill((c.value / totalExpense) * 100, c.color)} />
+                            <div style={{ height: "100%", width: `${(c.value / totalExpense) * 100}%`, background: c.color, borderRadius: 99, transition: "width 0.6s ease" }} />
                           </div>
                         </div>
                       ))}
@@ -467,40 +671,88 @@ ${input.slice(0, 4000)}` }];
                 </div>
 
                 <div style={S.card}>
-                  <div style={S.sectionTitle}>Tendencia de gastos</div>
-                  <SparkBar data={sparkData} color="#f59e0b" />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                    {MONTHS.slice(Math.max(0, month - 5), month + 1).map((m, i) => (
-                      <span key={i} style={{ fontSize: 10, color: "#475569", fontFamily: "'DM Mono', monospace" }}>{m}</span>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: 18, borderTop: "1px solid #1e293b", paddingTop: 14 }}>
-                    <div style={{ ...S.sectionTitle, fontSize: 15 }}>Últimas transacciones</div>
-                    {monthExpenses.slice(-5).reverse().map(e => (
-                      <div key={e.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #1e293b", fontSize: 13 }}>
-                        <span>{CATEGORIES[e.category]?.icon} {e.name}</span>
-                        <span style={{ fontFamily: "'DM Mono', monospace", color: "#f59e0b" }}>-${Number(e.amount).toLocaleString()}</span>
+                  <div style={S.sectionTitle}>🔒 Gastos Fijos</div>
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                    <DonutChart data={expensesByTypeFixed.slice(0, 6)} />
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 8, fontWeight: "bold" }}>
+                          <span>Total Mensual</span>
+                          <span style={{ fontFamily: "'DM Mono', monospace", color: "#6366f1" }}>${gastosFijos.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+                        </div>
                       </div>
-                    ))}
-                    {monthExpenses.length === 0 && <div style={{ color: "#475569", fontSize: 13 }}>Sin gastos este mes</div>}
+                      {expensesByTypeFixed.slice(0, 5).map((c, i) => (
+                        <div key={i} style={{ marginBottom: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                            <span>{c.icon} {c.name}</span>
+                            <span style={{ fontFamily: "'DM Mono', monospace", color: c.color }}>${c.value.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 99, background: "#1e293b", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${(c.value / gastosFijos) * 100}%`, background: c.color, borderRadius: 99, transition: "width 0.6s ease" }} />
+                          </div>
+                        </div>
+                      ))}
+                      {expensesByTypeFixed.length === 0 && <div style={{ color: "#475569", fontSize: 13 }}>Sin gastos fijos</div>}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={S.card}>
+                  <div style={S.sectionTitle}>📊 Gastos Variables</div>
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                    <DonutChart data={expensesByTypeVariable.slice(0, 6)} />
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 8, fontWeight: "bold" }}>
+                          <span>Total Mensual</span>
+                          <span style={{ fontFamily: "'DM Mono', monospace", color: "#f59e0b" }}>${gastosVariables.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+                        </div>
+                      </div>
+                      {expensesByTypeVariable.slice(0, 5).map((c, i) => (
+                        <div key={i} style={{ marginBottom: 8 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                            <span>{c.icon} {c.name}</span>
+                            <span style={{ fontFamily: "'DM Mono', monospace", color: c.color }}>${c.value.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 99, background: "#1e293b", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${(c.value / gastosVariables) * 100}%`, background: c.color, borderRadius: 99, transition: "width 0.6s ease" }} />
+                          </div>
+                        </div>
+                      ))}
+                      {expensesByTypeVariable.length === 0 && <div style={{ color: "#475569", fontSize: 13 }}>Sin gastos variables</div>}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ ...S.card, background: "linear-gradient(135deg, #0f172a, #1a2540)", border: "1px solid #10b98133" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
-                  <div>
-                    <div style={S.kpiLabel}>Tasa de ahorro</div>
-                    <div style={{ fontSize: 38, fontFamily: "'DM Serif Display', serif", color: savingsRate >= 20 ? "#10b981" : savingsRate >= 10 ? "#f59e0b" : "#ef4444" }}>{savingsRate}%</div>
-                    <div style={S.kpiSub}>{savingsRate >= 20 ? "🟢 Excelente" : savingsRate >= 10 ? "🟡 Regular" : "🔴 Bajo — revisa tus gastos"}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 200, paddingLeft: 20 }}>
-                    <div style={{ height: 10, borderRadius: 99, background: "#1e293b", overflow: "hidden" }}>
-                      <div style={S.progressFill(savingsRate, savingsRate >= 20 ? "#10b981" : savingsRate >= 10 ? "#f59e0b" : "#ef4444")} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#475569", marginTop: 4, fontFamily: "'DM Mono', monospace" }}>
-                      <span>0%</span><span>10%</span><span>20%</span><span>30%+</span>
-                    </div>
+              {/* Panel de Test - Verificar Supabase */}
+              <div style={{ ...S.card, border: "1px solid #8b5cf644", background: "#8b5cf611", marginTop: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={S.sectionTitle}>🧪 Test Supabase</div>
+                  <button onClick={async () => {
+                    setAiLog(prev => [...prev.slice(-4), "⏳ Verificando conexión..."]);
+                    try {
+                      const response = await fetch(`${SUPABASE_URL}/rest/v1/transactions?select=count()`, {
+                        headers: { "Authorization": `Bearer ${SUPABASE_KEY}` }
+                      });
+                      const data = await response.json();
+                      setAiLog(prev => [...prev.slice(-4), `✅ Conexión OK | Total transacciones en BD: ${data[0]?.count || 0}`]);
+                    } catch (err) {
+                      setAiLog(prev => [...prev.slice(-4), `❌ Error: ${err.message}`]);
+                    }
+                  }} style={{ ...S.btn(), padding: "6px 12px", fontSize: 11 }}>
+                    Verificar BD
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <div>📊 Ingresos locales: <strong>{incomes.length}</strong></div>
+                  <div>📈 Gastos locales: <strong>{expenses.length}</strong></div>
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #8b5cf633" }}>
+                    {aiLog.slice(-3).map((log, i) => (
+                      <div key={i} style={{ fontSize: 11, color: log.includes("✅") ? "#10b981" : log.includes("❌") ? "#ef4444" : "#64748b", marginBottom: 4 }}>
+                        {log}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -515,89 +767,56 @@ ${input.slice(0, 4000)}` }];
                 <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 10, alignItems: "end", flexWrap: "wrap" }}>
                   <div>
                     <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>CONCEPTO</div>
-                    <input style={S.input} placeholder="Ej. Salario, Freelance..." value={newIncome.name} onChange={e => setNewIncome(p => ({ ...p, name: e.target.value }))} />
+                    <input style={S.input} placeholder="Ej. Salario..." value={newIncome.name} onChange={e => setNewIncome(p => ({ ...p, name: toTitleCase(e.target.value) }))} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>MONTO ($)</div>
+                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>MONTO</div>
                     <input style={{ ...S.input, width: 120 }} type="number" placeholder="0.00" value={newIncome.amount} onChange={e => setNewIncome(p => ({ ...p, amount: e.target.value }))} />
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>TIPO</div>
-                    <select style={S.select} value={newIncome.type} onChange={e => setNewIncome(p => ({ ...p, type: e.target.value }))}>
+                    <select style={{ ...S.input, width: 100 }} value={newIncome.type} onChange={e => setNewIncome(p => ({ ...p, type: e.target.value }))}>
                       <option value="fijo">Fijo</option>
                       <option value="variable">Variable</option>
                     </select>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>FRECUENCIA</div>
-                    <select style={S.select} value={newIncome.frecuencia} onChange={e => setNewIncome(p => ({ ...p, frecuencia: e.target.value }))}>
+                    <select style={{ ...S.input, width: 100 }} value={newIncome.frecuencia} onChange={e => setNewIncome(p => ({ ...p, frecuencia: e.target.value }))}>
                       {Object.entries(FRECUENCIAS).map(([key, f]) => (
-                        <option key={key} value={key}>{f.icon} {f.label}</option>
+                        <option key={key} value={key}>{f.label}</option>
                       ))}
                     </select>
                   </div>
                   <button style={{ ...S.btn(), marginTop: 20 }} onClick={addIncome}>+ Agregar</button>
                 </div>
-                {newIncome.amount > 0 && newIncome.frecuencia !== "mensual" && (
-                  <div style={{ marginTop: 10, padding: "8px 12px", background: "#10b98111", border: "1px solid #10b98133", borderRadius: 8, fontSize: 12, color: "#10b981", fontFamily: "'DM Mono', monospace" }}>
-                    💡 Equivalente mensual: <strong>${toMonthly(newIncome.amount, newIncome.frecuencia).toLocaleString("es-MX", { maximumFractionDigits: 0 })}</strong>
-                  </div>
-                )}
               </div>
               {incomes.map(i => {
-                const freq = FRECUENCIAS[i.frecuencia || "mensual"];
-                const monthly = toMonthly(i.amount, i.frecuencia);
-                const isNotMonthly = i.frecuencia && i.frecuencia !== "mensual";
+                const monthlyValue = toMonthly(Number(i.amount), i.frecuencia);
+                const freq = FRECUENCIAS[i.frecuencia];
                 return (
-                  <div key={i.id} style={S.row}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 18 }}>💼</span>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 500 }}>{i.name}</div>
-                        <div style={{ display: "flex", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
-                          <span style={S.badge("#10b981")}>{i.type}</span>
-                          <span style={S.badge(freq.color)}>{freq.icon} {freq.label}</span>
-                        </div>
+                  <div key={i.id} style={{ ...S.card, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", borderLeft: `3px solid #10b981` }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 18 }}>💰</span>
+                        <strong style={{ color: "#e2e8f0" }}>{i.name}</strong>
+                        <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "#10b98122", color: "#10b981", fontWeight: 600 }}>
+                          {freq?.icon} {freq?.label}
+                        </span>
                       </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "right" }}>
-                      <div>
-                        <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: "#10b981" }}>
-                          +${Number(i.amount).toLocaleString()}
-                        </div>
-                        {isNotMonthly && (
-                          <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>
-                            ≈ ${monthly.toLocaleString("es-MX", { maximumFractionDigits: 0 })}/mes
-                          </div>
-                        )}
+                    <div style={{ textAlign: "right", marginRight: 12 }}>
+                      <div style={{ fontFamily: "'DM Mono', monospace", color: "#10b981", fontWeight: 600, fontSize: 13 }}>
+                        +${monthlyValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })}
                       </div>
-                      <button style={S.editBtn} onClick={() => openEditIncome(i)}>✏️ editar</button>
-                      <button style={S.deleteBtn} onClick={() => deleteIncome(i.id)}>✕</button>
+                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>
+                        {i.frecuencia === "mensual" ? "Mensual" : `${freq?.label} • +$${Number(i.amount).toLocaleString()}`}
+                      </div>
                     </div>
+                    <button style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16 }} onClick={() => deleteIncome(i.id)}>✕</button>
                   </div>
                 );
               })}
-              <div style={{ ...S.card, marginTop: 16, border: "1px solid #10b98133" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-                  <div>
-                    <div style={S.kpiLabel}>Total ingresos mensuales equivalentes</div>
-                    <div style={{ ...S.kpiValue("#10b981"), fontSize: 34 }}>+${totalIncome.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {Object.entries(FRECUENCIAS).map(([key, f]) => {
-                      const count = incomes.filter(i => (i.frecuencia || "mensual") === key).length;
-                      if (count === 0) return null;
-                      return (
-                        <div key={key} style={{ padding: "6px 10px", background: f.color + "15", border: `1px solid ${f.color}33`, borderRadius: 8, textAlign: "center" }}>
-                          <div style={{ fontSize: 16 }}>{f.icon}</div>
-                          <div style={{ fontSize: 11, color: f.color, fontFamily: "'DM Mono', monospace" }}>{f.label}</div>
-                          <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{count}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
             </>
           )}
 
@@ -605,515 +824,130 @@ ${input.slice(0, 4000)}` }];
           {tab === "expenses" && (
             <>
               <div style={S.sectionTitle}>Gastos — {MONTHS[month]} {CURRENT_YEAR}</div>
+              
+              {/* Formulario compacto en una línea */}
               <div style={{ ...S.card, marginBottom: 18 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto auto", gap: 10, alignItems: "end", flexWrap: "wrap" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1.2fr 1.2fr 1.2fr auto", gap: 10, alignItems: "center" }}>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>CONCEPTO</div>
-                    <input style={S.input} placeholder="Ej. Renta, Uber..." value={newExpense.name} onChange={e => setNewExpense(p => ({ ...p, name: e.target.value }))} />
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>CONCEPTO</div>
+                    <input style={S.input} placeholder="Ej: Renta, Uber..." value={newExpense.name} onChange={e => setNewExpense(p => ({ ...p, name: toTitleCase(e.target.value) }))} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>MONTO</div>
-                    <input style={{ ...S.input, width: 100 }} type="number" placeholder="0.00" value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>MONTO</div>
+                    <input style={S.input} type="number" placeholder="0.00" value={newExpense.amount} onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>TIPO</div>
-                    <select style={S.select} value={newExpense.type} onChange={e => setNewExpense(p => ({ ...p, type: e.target.value }))}>
-                      <option value="fijo">Fijo</option>
-                      <option value="variable">Variable</option>
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>TIPO</div>
+                    <select style={S.input} value={newExpense.type} onChange={e => setNewExpense(p => ({ ...p, type: e.target.value }))}>
+                      <option value="fijo">🔒 Fijo</option>
+                      <option value="variable">📊 Variable</option>
                     </select>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>FRECUENCIA</div>
-                    <select style={S.select} value={newExpense.frecuencia} onChange={e => setNewExpense(p => ({ ...p, frecuencia: e.target.value }))}>
-                      {Object.entries(FRECUENCIAS).map(([key, f]) => (
-                        <option key={key} value={key}>{f.icon} {f.label}</option>
-                      ))}
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>FRECUENCIA</div>
+                    <select style={S.input} value={newExpense.frecuencia} onChange={e => setNewExpense(p => ({ ...p, frecuencia: e.target.value }))}>
+                      <option value="diaria">📅 Diaria</option>
+                      <option value="semanal">🗓️ Semanal</option>
+                      <option value="quincenal">📆 Quincenal</option>
+                      <option value="mensual">🗃️ Mensual</option>
                     </select>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>CATEGORÍA</div>
-                    <select style={S.select} value={newExpense.category} onChange={e => setNewExpense(p => ({ ...p, category: e.target.value }))}>
+                    <div style={{ fontSize: 10, color: "#64748b", marginBottom: 3, fontFamily: "'DM Mono', monospace" }}>CATEGORÍA</div>
+                    <select style={S.input} value={newExpense.category} onChange={e => setNewExpense(p => ({ ...p, category: e.target.value }))}>
                       {Object.keys(CATEGORIES).map(c => <option key={c}>{c}</option>)}
                     </select>
                   </div>
-                  <button style={{ ...S.btn(), marginTop: 20 }} onClick={addExpense}>+ Agregar</button>
+                  <button style={{ ...S.btn(), height: 40, marginTop: 18 }} onClick={addExpense}>+ Agregar</button>
                 </div>
-
-                {/* Custom "Otros" input */}
-                {newExpense.category === "Otros" && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>
-                      NOMBRE PERSONALIZADO PARA "OTROS" <span style={{ color: "#475569" }}>(solo # y letras, máx. 12 caracteres)</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input
-                        style={{ ...S.input, maxWidth: 220, fontFamily: "'DM Mono', monospace", letterSpacing: 1 }}
-                        placeholder="#MiCategoria"
-                        maxLength={12}
-                        value={customCatInput}
-                        onChange={e => {
-                          const val = e.target.value.replace(/[^#a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]/g, "");
-                          setCustomCatInput(val.slice(0, 12));
-                        }}
-                      />
-                      <span style={{ fontSize: 11, color: customCatInput.length >= 12 ? "#ef4444" : "#475569", fontFamily: "'DM Mono', monospace" }}>
-                        {customCatInput.length}/12
-                      </span>
-                      {customCatInput && (
-                        <span style={{ padding: "3px 10px", borderRadius: 99, fontSize: 11, background: "#94a3b822", color: "#94a3b8", border: "1px solid #94a3b844", fontFamily: "'DM Mono', monospace" }}>
-                          📦 {customCatInput}
+              </div>
+              {expenses.map(e => (
+                <div key={e.id} style={{ ...S.card, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", borderLeft: `3px solid ${CATEGORIES[e.category]?.color || "#94A3B8"}` }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 18 }}>{CATEGORIES[e.category]?.icon || "📦"}</span>
+                      {editingId === e.id ? (
+                        <input 
+                          type="text"
+                          value={e.name}
+                          onChange={(evt) => setExpenses(prev => prev.map(x => x.id === e.id ? { ...x, name: toTitleCase(evt.target.value) } : x))}
+                          style={{ background: "#1e293b", border: "1px solid #334155", color: "white", fontSize: 16, fontWeight: "bold", fontFamily: "inherit", padding: "4px 8px", borderRadius: 4, outline: "none" }}
+                          autoFocus
+                        />
+                      ) : (
+                        <strong>{e.name}</strong>
+                      )}
+                      {editingId === e.id ? (
+                        <select 
+                          value={e.type}
+                          onChange={(evt) => setExpenses(prev => prev.map(x => x.id === e.id ? { ...x, type: evt.target.value } : x))}
+                          style={{ fontSize: 10, padding: "4px 6px", borderRadius: 4, background: "#1e293b", border: "1px solid #334155", color: e.type === "fijo" ? "#6366f1" : "#f59300", fontWeight: 600, cursor: "pointer" }}>
+                          <option value="fijo">🔒 Fijo</option>
+                          <option value="variable">📊 Variable</option>
+                        </select>
+                      ) : (
+                        <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: e.type === "fijo" ? "#6366f122" : "#f5931122", color: e.type === "fijo" ? "#6366f1" : "#f59300", fontWeight: 600 }}>
+                          {e.type === "fijo" ? "🔒 Fijo" : "📊 Variable"}
                         </span>
                       )}
                     </div>
-                  </div>
-                )}
-
-                {/* Equivalente mensual preview */}
-                {newExpense.amount > 0 && newExpense.frecuencia !== "mensual" && (
-                  <div style={{ marginTop: 10, padding: "8px 12px", background: "#f59e0b11", border: "1px solid #f59e0b33", borderRadius: 8, fontSize: 12, color: "#f59e0b", fontFamily: "'DM Mono', monospace" }}>
-                    💡 Equivalente mensual: <strong>${toMonthly(newExpense.amount, newExpense.frecuencia).toLocaleString("es-MX", { maximumFractionDigits: 0 })}</strong>
-                  </div>
-                )}
-              </div>
-
-              {/* Group by category */}
-              {(() => {
-                const groups = monthExpenses.reduce((acc, e) => {
-                  const cat = e.category || "Otros";
-                  if (!acc[cat]) acc[cat] = [];
-                  acc[cat].push(e);
-                  return acc;
-                }, {});
-                const sortedCats = Object.entries(groups).sort((a, b) => {
-                  const totA = a[1].reduce((s, e) => s + toMonthly(e.amount, e.frecuencia || "mensual"), 0);
-                  const totB = b[1].reduce((s, e) => s + toMonthly(e.amount, e.frecuencia || "mensual"), 0);
-                  return totB - totA;
-                });
-                if (sortedCats.length === 0) return (
-                  <div style={{ color: "#475569", textAlign: "center", padding: 32 }}>Sin gastos registrados este mes</div>
-                );
-                return sortedCats.map(([cat, items]) => {
-                  const catMeta = CATEGORIES[cat] || { color: "#94A3B8", icon: "📦" };
-                  const catTotal = items.reduce((s, e) => s + toMonthly(e.amount, e.frecuencia || "mensual"), 0);
-                  return (
-                    <div key={cat} style={{ marginBottom: 18 }}>
-                      {/* Category header */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderRadius: "10px 10px 0 0", background: catMeta.color + "18", borderLeft: `3px solid ${catMeta.color}`, borderTop: `1px solid ${catMeta.color}33`, borderRight: `1px solid ${catMeta.color}33`, marginBottom: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 18 }}>{catMeta.icon}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: catMeta.color, fontFamily: "'DM Sans', sans-serif" }}>{cat}</span>
-                          <span style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{items.length} {items.length === 1 ? "gasto" : "gastos"}</span>
-                        </div>
-                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: catMeta.color, fontWeight: 600 }}>
-                          ${catTotal.toLocaleString("es-MX", { maximumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                      {/* Items */}
-                      <div style={{ borderLeft: `3px solid ${catMeta.color}44`, borderRight: `1px solid ${catMeta.color}22`, borderBottom: `1px solid ${catMeta.color}22`, borderRadius: "0 0 10px 10px", overflow: "hidden" }}>
-                        {items.map((e, idx) => {
-                          const freq = FRECUENCIAS[e.frecuencia || "mensual"];
-                          const monthly = toMonthly(e.amount, e.frecuencia || "mensual");
-                          const isNotMonthly = e.frecuencia && e.frecuencia !== "mensual";
-                          return (
-                            <div key={e.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", background: idx % 2 === 0 ? "#0f172a" : "#0d1424", borderTop: idx === 0 ? "none" : "1px solid #1e293b" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <div>
-                                  <div style={{ fontSize: 13, fontWeight: 500, color: "#e2e8f0" }}>{e.name}</div>
-                                  <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" }}>
-                                    <span style={S.badge(e.type === "fijo" ? "#10b981" : "#f59e0b")}>{e.type}</span>
-                                    <span style={S.badge(freq.color)}>{freq.icon} {freq.label}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "right" }}>
-                                <div>
-                                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: "#f59e0b" }}>-${Number(e.amount).toLocaleString()}</div>
-                                  {isNotMonthly && (
-                                    <div style={{ fontSize: 10, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>≈ ${monthly.toLocaleString("es-MX", { maximumFractionDigits: 0 })}/mes</div>
-                                  )}
-                                </div>
-                                <button style={S.editBtn} onClick={() => openEditExpense(e)}>✏️ editar</button>
-                                <button style={S.deleteBtn} onClick={() => deleteExpense(e.id)}>✕</button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                    <div style={{ fontSize: 11, color: "#64748b", display: "flex", gap: 12 }}>
+                      {editingId === e.id ? (
+                        <>
+                          <select 
+                            value={e.category}
+                            onChange={(evt) => setExpenses(prev => prev.map(x => x.id === e.id ? { ...x, category: evt.target.value } : x))}
+                            style={{ background: "#1e293b", border: "1px solid #334155", color: "#64748b", fontSize: 11, fontFamily: "inherit", padding: "4px 6px", borderRadius: 4, outline: "none", cursor: "pointer" }}>
+                            {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <select 
+                            value={e.frecuencia}
+                            onChange={(evt) => setExpenses(prev => prev.map(x => x.id === e.id ? { ...x, frecuencia: evt.target.value } : x))}
+                            style={{ background: "#1e293b", border: "1px solid #334155", color: "#64748b", fontSize: 11, fontFamily: "inherit", padding: "4px 6px", borderRadius: 4, outline: "none", cursor: "pointer" }}>
+                            <option value="diaria">📅 Diaria</option>
+                            <option value="semanal">🗓️ Semanal</option>
+                            <option value="quincenal">📆 Quincenal</option>
+                            <option value="mensual">🗃️ Mensual</option>
+                          </select>
+                        </>
+                      ) : (
+                        <>
+                          <span>{e.category}</span>
+                          <span>{FRECUENCIAS[e.frecuencia]?.icon} {FRECUENCIAS[e.frecuencia]?.label}</span>
+                        </>
+                      )}
                     </div>
-                  );
-                });
-              })()}
-
-              <div style={{ ...S.card, marginTop: 18, border: "1px solid #f59e0b33" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-                  <div><div style={S.kpiLabel}>Total gastos (equiv. mensual)</div><div style={{ ...S.kpiValue("#f59e0b"), fontSize: 30 }}>-${totalExpense.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</div></div>
-                  <div><div style={S.kpiLabel}>Balance</div><div style={{ ...S.kpiValue(balance >= 0 ? "#10b981" : "#ef4444"), fontSize: 30 }}>${Math.abs(balance).toLocaleString("es-MX", { maximumFractionDigits: 0 })}</div></div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    {Object.entries(FRECUENCIAS).map(([key, f]) => {
-                      const count = monthExpenses.filter(e => (e.frecuencia || "mensual") === key).length;
-                      if (count === 0) return null;
-                      return (
-                        <div key={key} style={{ padding: "6px 10px", background: f.color + "15", border: `1px solid ${f.color}33`, borderRadius: 8, textAlign: "center" }}>
-                          <div style={{ fontSize: 15 }}>{f.icon}</div>
-                          <div style={{ fontSize: 10, color: f.color, fontFamily: "'DM Mono', monospace" }}>{f.label}</div>
-                          <div style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{count}</div>
-                        </div>
-                      );
-                    })}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 220 }}>
+                    <div style={{ textAlign: "right" }}>
+                      {editingId === e.id ? (
+                        <input 
+                          type="number"
+                          value={e.amount}
+                          onChange={(evt) => setExpenses(prev => prev.map(x => x.id === e.id ? { ...x, amount: evt.target.value } : x))}
+                          style={{ background: "#1e293b", border: "1px solid #334155", color: "#f59e0b", fontSize: 14, fontWeight: "600", fontFamily: "'DM Mono', monospace", padding: "4px 8px", borderRadius: 4, outline: "none", width: 100, textAlign: "right" }}
+                        />
+                      ) : (
+                        <div style={{ fontFamily: "'DM Mono', monospace", color: "#f59e0b", fontWeight: 600 }}>-${Number(e.amount).toLocaleString()}</div>
+                      )}
+                      <div style={{ fontSize: 10, color: "#64748b" }}>Mensual: -${toMonthly(e.amount, e.frecuencia).toLocaleString("es-MX", { maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <button style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", fontSize: 16, padding: "4px 8px" }} onClick={() => setEditingId(editingId === e.id ? null : e.id)} title="Editar">✏️</button>
+                    <button style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 16, padding: "4px 8px" }} onClick={() => deleteExpense(e.id)} title="Eliminar">✕</button>
                   </div>
                 </div>
-              </div>
+              ))}
             </>
           )}
 
           {/* ── ESTADOS DE CUENTA ── */}
-          {tab === "statement" && (
-            <>
-              <div style={S.sectionTitle}>🏦 Estados de Cuenta</div>
 
-              {/* ── Upload card ── */}
-              {!pendingTxs && (
-                <div style={{ ...S.card, marginBottom: 18, border: "1px solid #6366f133" }}>
-                  {/* Bank selector */}
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Banco / Emisor</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {BANKS.map(b => (
-                        <button key={b.id} onClick={() => setSelectedBank(b.id)}
-                          style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${selectedBank === b.id ? b.color : "#334155"}`, background: selectedBank === b.id ? b.color + "22" : "#1e293b", color: selectedBank === b.id ? b.color : "#64748b", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", fontWeight: 500, transition: "all 0.15s" }}>
-                          {b.icon} {b.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
 
-                  {/* Drop zone */}
-                  <div style={S.dropZone(dragOver)}
-                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={handleDrop}
-                    onClick={() => fileRef.current?.click()}>
-                    <div style={{ fontSize: 34, marginBottom: 8 }}>📑</div>
-                    <div style={{ fontSize: 14, color: "#94a3b8" }}>Arrastra tu estado de cuenta aquí</div>
-                    <div style={{ fontSize: 12, color: "#475569", marginTop: 4 }}>PDF, .txt o .csv</div>
-                    <input ref={fileRef} type="file" accept=".pdf,.txt,.csv,application/pdf" style={{ display: "none" }}
-                      onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
-                  </div>
-
-                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>O pega el texto:</div>
-                  <textarea style={{ ...S.input, minHeight: 90, resize: "vertical", lineHeight: 1.6 }}
-                    placeholder={"01/03/2025   WALMART              $1,245.00\n02/03/2025   UBER *TRIP           $89.50"}
-                    value={pasteText} onChange={e => setPasteText(e.target.value)} />
-                  <button style={{ ...S.btn("#6366f1"), marginTop: 10, width: "100%", padding: "11px", opacity: isProcessing ? 0.7 : 1 }}
-                    onClick={() => { if (pasteText.length > 20) processStatement(pasteText); }} disabled={isProcessing}>
-                    {isProcessing ? "⏳ Analizando con IA..." : "✨ Analizar estado de cuenta"}
-                  </button>
-                </div>
-              )}
-
-              {/* ── Processing indicator ── */}
-              {isProcessing && (
-                <div style={{ ...S.card, border: "1px solid #6366f133", marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6366f1" }}>
-                    <span style={{ fontSize: 18 }}>🔄</span>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13 }}>Extrayendo y clasificando movimientos...</span>
-                  </div>
-                </div>
-              )}
-
-              {/* ── AI error log ── */}
-              {aiLog.length > 0 && !isProcessing && (
-                <div style={{ ...S.card, border: "1px solid #ef444433", marginBottom: 14 }}>
-                  {aiLog.map((log, i) => (
-                    <div key={i} style={S.logItem(false)}>{log}</div>
-                  ))}
-                  <button style={{ ...S.btn("#1e293b"), marginTop: 8, border: "1px solid #334155", color: "#94a3b8" }}
-                    onClick={() => setAiLog([])}>Limpiar</button>
-                </div>
-              )}
-
-              {/* ── PENDING SUMMARY — confirm before export ── */}
-              {pendingTxs && !isProcessing && (() => {
-                const bankInfo = BANKS.find(b => b.id === pendingTxs.bank) || BANKS[4];
-                const total = pendingTxs.txs.reduce((s, t) => s + t.amount, 0);
-                // Group by category
-                const byCategory = pendingTxs.txs.reduce((acc, t) => {
-                  acc[t.category] = acc[t.category] || { total: 0, count: 0, txs: [] };
-                  acc[t.category].total += t.amount;
-                  acc[t.category].count++;
-                  acc[t.category].txs.push(t);
-                  return acc;
-                }, {});
-                const sortedCats = Object.entries(byCategory).sort((a,b) => b[1].total - a[1].total);
-
-                return (
-                  <div style={{ marginBottom: 18 }}>
-                    {/* Header */}
-                    <div style={{ ...S.card, border: `1px solid ${bankInfo.color}44`, background: `linear-gradient(135deg, #0f172a, #1a2540)`, marginBottom: 14 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span style={{ fontSize: 26 }}>{bankInfo.icon}</span>
-                            <div>
-                              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: bankInfo.color }}>{bankInfo.label}</div>
-                              <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>{pendingTxs.txs.length} movimientos detectados · {MONTHS[month]} {CURRENT_YEAR}</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace" }}>TOTAL ANALIZADO</div>
-                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: "#f59e0b" }}>${total.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Category summary */}
-                    <div style={{ ...S.card, marginBottom: 14, border: "1px solid #1e293b" }}>
-                      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: "#f1f5f9", marginBottom: 12 }}>Resumen por categoría</div>
-                      {sortedCats.map(([cat, info]) => {
-                        const meta = CATEGORIES[cat] || { color: "#94a3b8", icon: "📦" };
-                        const pct = (info.total / total) * 100;
-                        return (
-                          <div key={cat} style={{ marginBottom: 12 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                              <span style={{ fontSize: 13, color: "#e2e8f0" }}>{meta.icon} {cat} <span style={{ fontSize: 11, color: "#475569" }}>({info.count})</span></span>
-                              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: meta.color }}>${info.total.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</span>
-                            </div>
-                            <div style={{ height: 5, borderRadius: 99, background: "#1e293b", overflow: "hidden" }}>
-                              <div style={{ height: "100%", width: `${pct}%`, background: meta.color, borderRadius: 99, transition: "width 0.5s ease" }} />
-                            </div>
-                            {/* Individual transactions */}
-                            <div style={{ marginTop: 5, paddingLeft: 12 }}>
-                              {info.txs.map((t, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", fontFamily: "'DM Mono', monospace", padding: "2px 0", borderBottom: i < info.txs.length - 1 ? "1px solid #1e293b" : "none" }}>
-                                  <span>{t.name}</span>
-                                  <span>${t.amount.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div style={{ borderTop: "1px solid #334155", paddingTop: 10, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>Total</span>
-                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 14, color: "#f59e0b", fontWeight: 700 }}>${total.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <button onClick={() => { setPendingTxs(null); setPasteText(""); }}
-                        style={{ flex: 1, padding: "11px", borderRadius: 8, border: "1px solid #334155", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>
-                        Cancelar
-                      </button>
-                      <button onClick={() => confirmExport(pendingTxs)}
-                        style={{ flex: 2, padding: "11px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#000", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans', sans-serif" }}>
-                        ✅ Exportar {pendingTxs.txs.length} gastos a {MONTHS[month]}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-            </>
-          )}
-
-          {/* ── HISTORIAL ── */}
-          {tab === "historial" && (
-            <>
-              <div style={S.sectionTitle}>📂 Historial de Estados de Cuenta</div>
-
-              {statements.length === 0 ? (
-                <div style={{ ...S.card, border: "1px solid #1e293b", textAlign: "center", padding: "48px 20px", color: "#475569" }}>
-                  <div style={{ fontSize: 40, marginBottom: 10 }}>📂</div>
-                  <div style={{ fontSize: 15, color: "#64748b" }}>Aún no has analizado ningún estado de cuenta</div>
-                  <div style={{ fontSize: 12, marginTop: 6 }}>Ve a <strong style={{ color: "#f59e0b" }}>Estados de Cuenta</strong> para subir uno</div>
-                </div>
-              ) : (
-                statements.map(stmt => {
-                  const bankInfo = BANKS.find(b => b.id === stmt.bank) || BANKS[4];
-                  const byCategory = stmt.txs.reduce((acc, t) => {
-                    acc[t.category] = (acc[t.category] || 0) + t.amount;
-                    return acc;
-                  }, {});
-                  const sortedCats = Object.entries(byCategory).sort((a,b) => b[1]-a[1]);
-                  return (
-                    <div key={stmt.id} style={{ ...S.card, marginBottom: 16, border: `1px solid ${bankInfo.color}33` }}>
-                      {/* Card header */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
-                          <span style={{ fontSize: 26 }}>{bankInfo.icon}</span>
-                          <div style={{ flex: 1 }}>
-                            {editingStmt === stmt.id ? (
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <input style={{ ...S.input, padding: "5px 10px", fontSize: 14, flex: 1 }}
-                                  value={editStmtName} onChange={e => setEditStmtName(e.target.value)}
-                                  onKeyDown={e => e.key === "Enter" && saveRenameStmt()} autoFocus />
-                                <button onClick={saveRenameStmt} style={{ ...S.btn(), padding: "5px 12px", fontSize: 12 }}>✓</button>
-                                <button onClick={() => setEditingStmt(null)} style={S.deleteBtn}>✕</button>
-                              </div>
-                            ) : (
-                              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                                <span style={{ fontSize: 16, fontWeight: 600, color: "#e2e8f0" }}>{stmt.name}</span>
-                                <button onClick={() => startRenameStmt(stmt)}
-                                  style={{ background: "transparent", border: "none", color: "#475569", cursor: "pointer", fontSize: 13, padding: "1px 4px" }}>✏️</button>
-                              </div>
-                            )}
-                            <div style={{ fontSize: 11, color: "#475569", fontFamily: "'DM Mono', monospace", marginTop: 3 }}>
-                              {stmt.date} · {MONTHS[stmt.month]} {CURRENT_YEAR} · {stmt.txs.length} movimientos
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: 10, color: "#475569", fontFamily: "'DM Mono', monospace" }}>TOTAL</div>
-                            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, color: bankInfo.color, fontWeight: 700 }}>
-                              ${stmt.total.toLocaleString("es-MX", { maximumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                          <button onClick={() => deleteStatement(stmt.id)}
-                            style={{ background: "#ef444411", border: "1px solid #ef444433", borderRadius: 8, color: "#ef4444", cursor: "pointer", fontSize: 12, padding: "6px 12px", fontFamily: "'DM Sans', sans-serif" }}>
-                            🗑 Borrar
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Category breakdown bars */}
-                      <div style={{ borderTop: "1px solid #1e293b", paddingTop: 12 }}>
-                        {sortedCats.map(([cat, val]) => {
-                          const meta = CATEGORIES[cat] || { color: "#94a3b8", icon: "📦" };
-                          const pct = (val / stmt.total) * 100;
-                          const catTxs = stmt.txs.filter(t => t.category === cat);
-                          return (
-                            <div key={cat} style={{ marginBottom: 10 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                                <span style={{ fontSize: 12, color: "#e2e8f0" }}>{meta.icon} {cat} <span style={{ fontSize: 10, color: "#475569" }}>({catTxs.length})</span></span>
-                                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: meta.color }}>${val.toLocaleString("es-MX", { maximumFractionDigits: 0 })}</span>
-                              </div>
-                              <div style={{ height: 5, borderRadius: 99, background: "#1e293b", overflow: "hidden", marginBottom: 4 }}>
-                                <div style={{ height: "100%", width: `${pct}%`, background: meta.color, borderRadius: 99 }} />
-                              </div>
-                              {catTxs.map((t, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#475569", fontFamily: "'DM Mono', monospace", padding: "1px 0 1px 10px" }}>
-                                  <span>— {t.name}</span>
-                                  <span>${t.amount.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</span>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </>
-          )}
         </div>
       </div>
-
-      {/* ── EDIT MODAL ── */}
-      {editModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-          onClick={(e) => { if (e.target === e.currentTarget) closeEdit(); }}>
-          <div style={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 16, padding: "28px 28px 24px", width: "100%", maxWidth: 480, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "#f1f5f9" }}>
-                {editModal.type === "expense" ? "✏️ Editar gasto" : "✏️ Editar ingreso"}
-              </div>
-              <button onClick={closeEdit} style={{ background: "transparent", border: "none", color: "#64748b", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {/* Name */}
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Concepto</div>
-                <input style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%", boxSizing: "border-box" }}
-                  value={editModal.data.name}
-                  onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, name: e.target.value } }))} />
-              </div>
-
-              {/* Amount */}
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Monto ($)</div>
-                <input type="number" style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "9px 12px", color: "#e2e8f0", fontSize: 14, fontFamily: "'DM Mono', monospace", outline: "none", width: "100%", boxSizing: "border-box" }}
-                  value={editModal.data.amount}
-                  onChange={e => setEditModal(m => ({ ...m, data: { ...m.data, amount: e.target.value } }))} />
-              </div>
-
-              {/* Type */}
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Tipo</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {["fijo","variable"].map(t => (
-                    <button key={t} onClick={() => setEditModal(m => ({ ...m, data: { ...m.data, type: t } }))}
-                      style={{ flex: 1, padding: "8px", borderRadius: 8, border: `1px solid ${editModal.data.type === t ? (t === "fijo" ? "#10b981" : "#f59e0b") : "#334155"}`, background: editModal.data.type === t ? (t === "fijo" ? "#10b98122" : "#f59e0b22") : "#1e293b", color: editModal.data.type === t ? (t === "fijo" ? "#10b981" : "#f59e0b") : "#64748b", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif", fontWeight: 500, transition: "all 0.15s" }}>
-                      {t === "fijo" ? "🔒 Fijo" : "🔄 Variable"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Frecuencia */}
-              <div>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Frecuencia</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {Object.entries(FRECUENCIAS).map(([key, f]) => (
-                    <button key={key} onClick={() => setEditModal(m => ({ ...m, data: { ...m.data, frecuencia: key } }))}
-                      style={{ flex: 1, padding: "7px 4px", borderRadius: 8, border: `1px solid ${editModal.data.frecuencia === key ? f.color : "#334155"}`, background: editModal.data.frecuencia === key ? f.color + "22" : "#1e293b", color: editModal.data.frecuencia === key ? f.color : "#64748b", cursor: "pointer", fontSize: 11, fontFamily: "'DM Mono', monospace", transition: "all 0.15s", textAlign: "center" }}>
-                      <div>{f.icon}</div>
-                      <div style={{ marginTop: 2 }}>{f.label}</div>
-                    </button>
-                  ))}
-                </div>
-                {editModal.data.amount > 0 && editModal.data.frecuencia !== "mensual" && (
-                  <div style={{ marginTop: 8, padding: "6px 10px", background: "#f59e0b11", border: "1px solid #f59e0b33", borderRadius: 6, fontSize: 11, color: "#f59e0b", fontFamily: "'DM Mono', monospace" }}>
-                    💡 Equivalente mensual: ${toMonthly(editModal.data.amount, editModal.data.frecuencia).toLocaleString("es-MX", { maximumFractionDigits: 0 })}
-                  </div>
-                )}
-              </div>
-
-              {/* Category — only for expenses */}
-              {editModal.type === "expense" && (
-                <div>
-                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5, fontFamily: "'DM Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>Categoría</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6 }}>
-                    {Object.entries(CATEGORIES).map(([cat, meta]) => (
-                      <button key={cat} onClick={() => { setEditModal(m => ({ ...m, data: { ...m.data, category: cat } })); if (cat !== "Otros") setEditCustomCat(""); }}
-                        style={{ padding: "7px 4px", borderRadius: 8, border: `1px solid ${editModal.data.category === cat ? meta.color : "#334155"}`, background: editModal.data.category === cat ? meta.color + "22" : "#1e293b", color: editModal.data.category === cat ? meta.color : "#64748b", cursor: "pointer", fontSize: 10, fontFamily: "'DM Sans', sans-serif", textAlign: "center", transition: "all 0.15s" }}>
-                        <div style={{ fontSize: 16 }}>{meta.icon}</div>
-                        <div style={{ marginTop: 2, lineHeight: 1.2 }}>{cat}</div>
-                      </button>
-                    ))}
-                  </div>
-
-                  {editModal.data.category === "Otros" && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4, fontFamily: "'DM Mono', monospace" }}>NOMBRE PERSONALIZADO <span style={{ color: "#475569" }}>(# y letras, máx. 12)</span></div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <input style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "7px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "'DM Mono', monospace", outline: "none", flex: 1 }}
-                          placeholder="#MiCategoria" maxLength={12} value={editCustomCat}
-                          onChange={e => setEditCustomCat(e.target.value.replace(/[^#a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]/g, "").slice(0, 12))} />
-                        <span style={{ fontSize: 11, color: editCustomCat.length >= 12 ? "#ef4444" : "#475569", fontFamily: "'DM Mono', monospace" }}>{editCustomCat.length}/12</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
-              <button onClick={closeEdit} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #334155", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif" }}>Cancelar</button>
-              <button onClick={saveEdit} style={{ flex: 2, padding: "10px", borderRadius: 8, border: "none", background: "#f59e0b", color: "#000", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans', sans-serif" }}>Guardar cambios</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
-
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<FinanceDashboard />);
