@@ -928,7 +928,7 @@ function renderOverview() {
     <div class="g3">
       ${[
         {label:"Ingresos",value:`+$${fmtMXN(tI)}`,color:"var(--green)",sub:`${S.incomes.length} fuente(s)`,icon:"↑"},
-        {label:"Gastos",value:`-$${fmtMXN(tE)}`,color:"var(--red)",sub:`${me.length} transacciones`,icon:"↓"},
+        {label:"Gastos",value:`-$${fmtMXN(tE)}`,color:"var(--red)",sub:`${MONTHS[S.month]} ${CUR_YEAR} · ${me.length} conceptos`,icon:"↓"},
         {label:"Balance",value:`$${fmtMXN(Math.abs(bal))}`,color:bal>=0?"var(--blue)":"var(--red)",sub:bal>=0?`Ahorro ${savR}%`:"⚠️ Déficit",icon:"="},
       ].map(k=>`<div class="kpi-card" style="border-color:${k.color}33">
         <div class="kpi-label">${k.label}</div>
@@ -938,10 +938,11 @@ function renderOverview() {
       </div>`).join("")}
     </div>
 
-    <!-- Gastos por categoría (izq) + Últimas transacciones (der) -->
+    <!-- Gastos por categoría (izq) + Ingresos por fuente (der) -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- GASTOS por categoría -->
       <div class="card" style="min-width:0">
-        <div class="section-title" style="margin-bottom:4px">Gastos por categoría</div>
+        <div class="section-title" style="margin-bottom:4px">💸 Gastos por categoría</div>
         <div style="font-size:11px;color:var(--t3);margin-bottom:10px">👆 Clic en una categoría para desglose</div>
         ${cats.length > 0
           ? `<div class="flex ai g16 fw">${donut}<div style="flex:1;min-width:120px" id="catBarsContainer">${catBars}</div></div>`
@@ -953,16 +954,72 @@ function renderOverview() {
              </div>`
         }
       </div>
+
+      <!-- INGRESOS por fuente -->
       <div class="card" style="min-width:0">
-        <div class="section-title" style="margin-bottom:12px">🕐 Últimas transacciones</div>
+        <div class="section-title" style="margin-bottom:4px">💰 Ingresos por fuente</div>
+        <div style="font-size:11px;color:var(--t3);margin-bottom:10px">${MONTHS[S.month]} ${CUR_YEAR} · ${S.incomes.length} fuente(s)</div>
         ${(()=>{
-          const recents = [...me].sort((a,b)=>(b.id||'').localeCompare(a.id||'')).slice(0,7);
-          if (!recents.length) return `<div style="text-align:center;padding:28px 0">
-            <div style="font-size:32px;margin-bottom:8px">💸</div>
-            <div style="color:var(--t3);font-size:13px;margin-bottom:12px">Sin transacciones</div>
+          if (!S.incomes.length) return `<div style="text-align:center;padding:28px 0">
+            <div style="font-size:32px;margin-bottom:8px">💼</div>
+            <div style="color:var(--t3);font-size:13px;margin-bottom:12px">Sin ingresos registrados</div>
             <button onclick="document.querySelector('[data-tab=expenses]').click()"
-              style="padding:7px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent)18;color:var(--accent);font-size:12px;cursor:pointer;font-weight:600">+ Añadir gasto</button>
+              style="padding:7px 16px;border-radius:8px;border:1px solid #22c55e;background:#22c55e18;color:#22c55e;font-size:12px;cursor:pointer;font-weight:600">+ Añadir ingreso</button>
           </div>`;
+          // Donut de ingresos
+          const iTotal = tI || 1;
+          let iCum = 0; const ir=52, icx=70, icy=70, icirc=2*Math.PI*ir;
+          const INC_COLORS = ['#22c55e','#06b6d4','#84cc16','#10b981','#3b82f6','#8b5cf6'];
+          const iSlices = S.incomes.slice(0,7).map((inc,idx)=>{
+            const pct = toMonthly(inc.amount,inc.frecuencia)/iTotal;
+            const dash=pct*icirc, gap=icirc-dash, offset=-iCum*icirc;
+            iCum+=pct;
+            const col = INC_COLORS[idx % INC_COLORS.length];
+            return `<circle cx="${icx}" cy="${icy}" r="${ir}" fill="none" stroke="${col}" stroke-width="16"
+              stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}"
+              style="transform:rotate(-90deg);transform-origin:${icx}px ${icy}px;transition:stroke-width .2s;cursor:pointer"
+              onmouseover="this.style.strokeWidth='20'" onmouseout="this.style.strokeWidth='16'"
+              title="${inc.name}: $${fmtMXN(toMonthly(inc.amount,inc.frecuencia))}"/>`;
+          }).join('');
+          const iDonut = `<svg width="140" height="140" viewBox="0 0 140 140" style="flex-shrink:0">
+            <circle cx="${icx}" cy="${icy}" r="${ir}" fill="none" stroke="#1a2d44" stroke-width="16"/>
+            ${iSlices}
+            <text x="${icx}" y="${icy-5}" text-anchor="middle" fill="#7da0c0" font-size="10" font-family="JetBrains Mono,monospace">Total</text>
+            <text x="${icx}" y="${icy+12}" text-anchor="middle" fill="#22c55e" font-size="13" font-weight="600" font-family="JetBrains Mono,monospace">$${fmtMXN(tI)}</text>
+          </svg>`;
+          const iBars = S.incomes.map((inc,idx)=>{
+            const monthly = toMonthly(inc.amount, inc.frecuencia);
+            const pct = tI > 0 ? Math.round(monthly/tI*100) : 0;
+            const col = INC_COLORS[idx % INC_COLORS.length];
+            const fr = FREQS[inc.frecuencia||'mensual'];
+            return `<div style="margin-bottom:9px">
+              <div class="flex jb ai" style="margin-bottom:3px">
+                <span style="font-size:12px">💼 ${inc.name} <span style="font-size:10px;color:var(--t3)">${fr.icon}</span></span>
+                <div class="flex ai g8">
+                  <span class="mono" style="font-size:10px;font-weight:700;color:${col};background:${col}18;padding:1px 6px;border-radius:4px;border:1px solid ${col}44">${pct}%</span>
+                  <span class="mono" style="font-size:11px;color:${col}">+$${fmtMXN(monthly)}</span>
+                </div>
+              </div>
+              <div class="prog-track" style="height:6px">
+                <div class="prog-fill" style="width:${pct}%;background:${col};transition:width .5s ease"></div>
+              </div>
+            </div>`;
+          }).join('');
+          return `<div class="flex ai g16 fw">${iDonut}<div style="flex:1;min-width:120px">${iBars}</div></div>`;
+        })()}
+      </div>
+    </div>
+
+    <!-- Últimas transacciones (colapsable, oculto por default) -->
+    <div class="card" style="margin-bottom:16px;border:1px solid var(--border)">
+      <div class="flex jb ai" style="cursor:pointer" onclick="toggleUltimasTx()">
+        <div class="section-title" style="margin-bottom:0">🕐 Últimas transacciones</div>
+        <button id="ultimasTxBtn" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 10px;cursor:pointer;color:var(--t3);font-size:11px">Ver ▼</button>
+      </div>
+      <div id="ultimasTxBody" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        ${(()=>{
+          const recents = [...me].sort((a,b)=>(b.id||'').localeCompare(a.id||'')).slice(0,10);
+          if (!recents.length) return `<div style="color:var(--t3);font-size:13px;text-align:center;padding:16px">Sin transacciones este mes</div>`;
           return recents.map((e,i)=>{
             const cm = catMeta(e.category);
             const monto = toMonthly(e.amount, e.frecuencia||'mensual');
@@ -979,57 +1036,6 @@ function renderOverview() {
       </div>
     </div>
 
-    <!-- Mini inversiones widget en resumen -->
-    ${(()=>{
-      const totalInv = S.investments.reduce((s,i)=>s+i.monto,0);
-      const totalRend = S.investments.reduce((s,i)=>s+calcRendimiento(i.monto,i.tasa).anual,0);
-      const hasInv = S.investments.length > 0;
-      const pctSavings = tI > 0 ? Math.min(100, Math.round(totalInv/tI*100)) : 0;
-      return `<div class="card" style="border:1px solid #3b82f633;margin-bottom:16px">
-        <div class="flex jb ai" style="margin-bottom:12px">
-          <div class="section-title" style="margin-bottom:0">📈 Inversiones</div>
-          <button onclick="document.querySelector('[data-tab=inversiones]').click()"
-            style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-input);color:var(--t3);font-size:11px;cursor:pointer">Ver todo →</button>
-        </div>
-        ${hasInv ? `
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
-          <div style="text-align:center">
-            <div class="kpi-label">Capital</div>
-            <div class="mono" style="font-size:16px;font-weight:700;color:var(--blue);margin-top:2px">$${fmtMXN(totalInv)}</div>
-          </div>
-          <div style="text-align:center">
-            <div class="kpi-label">Rendimiento/mes</div>
-            <div class="mono" style="font-size:16px;font-weight:700;color:#22c55e;margin-top:2px">+$${fmtMXN(totalRend/12)}</div>
-          </div>
-          <div style="text-align:center">
-            <div class="kpi-label">${S.investments.length} posición(es)</div>
-            <div class="mono" style="font-size:16px;font-weight:700;color:var(--purple);margin-top:2px">+$${fmtMXN(totalRend)}/año</div>
-          </div>
-        </div>
-        <div style="margin-bottom:6px">
-          <div class="flex jb ai" style="margin-bottom:4px">
-            <span style="font-size:10px;color:var(--t3)">💰 Patrimonio invertido vs ingresos del mes</span>
-            <span class="mono" style="font-size:10px;color:var(--blue)">${pctSavings}%</span>
-          </div>
-          <div style="background:#1a2d44;border-radius:6px;height:8px;overflow:hidden">
-            <div style="height:100%;width:${pctSavings}%;background:linear-gradient(90deg,#3b82f6,#06b6d4);border-radius:6px;transition:width .5s"></div>
-          </div>
-        </div>
-        ${S.investments.slice(0,3).map(inv=>{
-          const m=INV_TYPES[inv.tipo]||INV_TYPES.otro;
-          return `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;background:${m.color}15;border:1px solid ${m.color}33;margin:2px;font-size:11px">
-            <span>${m.icon}</span><span style="color:${m.color};font-weight:600">${inv.nombre}</span>
-            <span class="mono" style="color:var(--t3);font-size:10px">$${fmtMXN(inv.monto)}</span>
-          </div>`;
-        }).join('')}${S.investments.length>3?`<span style="font-size:10px;color:var(--t3);margin-left:4px">+${S.investments.length-3} más</span>`:''}
-        ` : `<div style="text-align:center;padding:16px 0">
-          <div style="font-size:11px;color:var(--t3);margin-bottom:10px">Sin inversiones registradas</div>
-          <button onclick="document.querySelector('[data-tab=inversiones]').click()"
-            style="padding:7px 16px;border-radius:8px;border:1px solid #3b82f6;background:#3b82f618;color:#3b82f6;font-size:12px;cursor:pointer;font-weight:600">+ Registrar inversión</button>
-        </div>`}
-      </div>`;
-    })()}
-
     <div class="g2">
       <div class="card" style="border:1px solid #22c55e33">
         <div class="section-title" style="font-size:15px">🔒 Gastos fijos — <span style="color:var(--red)">$${fmtMXN(tFixed)}</span></div>
@@ -1042,10 +1048,56 @@ function renderOverview() {
         <div style="margin-top:8px;font-size:11px;color:var(--t3)">${varExp.length} gasto(s) variable(s) este mes</div>
       </div>
     </div>
+
+    <!-- Mini inversiones widget AL FINAL -->
+    ${(()=>{
+      const totalInv = S.investments.reduce((s,i)=>s+i.monto,0);
+      const totalRend = S.investments.reduce((s,i)=>s+calcRendimiento(i.monto,i.tasa).anual,0);
+      const hasInv = S.investments.length > 0;
+      const pctSavings = tI > 0 ? Math.min(100, Math.round(totalInv/tI*100)) : 0;
+      return `<div class="card" style="border:1px solid #3b82f633;margin-top:16px">
+        <div class="flex jb ai" style="margin-bottom:12px">
+          <div class="section-title" style="margin-bottom:0">📈 Inversiones</div>
+          <button onclick="document.querySelector('[data-tab=invest]').click()"
+            style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-input);color:var(--t3);font-size:11px;cursor:pointer">Ver todo →</button>
+        </div>
+        ${hasInv ? `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+          <div style="text-align:center"><div class="kpi-label">Capital</div><div class="mono" style="font-size:16px;font-weight:700;color:var(--blue);margin-top:2px">$${fmtMXN(totalInv)}</div></div>
+          <div style="text-align:center"><div class="kpi-label">Rendimiento/mes</div><div class="mono" style="font-size:16px;font-weight:700;color:#22c55e;margin-top:2px">+$${fmtMXN(totalRend/12)}</div></div>
+          <div style="text-align:center"><div class="kpi-label">${S.investments.length} posición(es)</div><div class="mono" style="font-size:16px;font-weight:700;color:var(--purple);margin-top:2px">+$${fmtMXN(totalRend)}/año</div></div>
+        </div>
+        <div style="margin-bottom:6px">
+          <div class="flex jb ai" style="margin-bottom:4px">
+            <span style="font-size:10px;color:var(--t3)">💰 Patrimonio invertido vs ingresos del mes</span>
+            <span class="mono" style="font-size:10px;color:var(--blue)">${pctSavings}%</span>
+          </div>
+          <div style="background:#1a2d44;border-radius:6px;height:8px;overflow:hidden">
+            <div style="height:100%;width:${pctSavings}%;background:linear-gradient(90deg,#3b82f6,#06b6d4);border-radius:6px;transition:width .5s"></div>
+          </div>
+        </div>
+        ${S.investments.slice(0,3).map(inv=>{ const m=INV_TYPES[inv.tipo]||INV_TYPES.otro; return `<div style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;background:${m.color}15;border:1px solid ${m.color}33;margin:2px;font-size:11px"><span>${m.icon}</span><span style="color:${m.color};font-weight:600">${inv.nombre}</span><span class="mono" style="color:var(--t3);font-size:10px">$${fmtMXN(inv.monto)}</span></div>`; }).join('')}${S.investments.length>3?`<span style="font-size:10px;color:var(--t3);margin-left:4px">+${S.investments.length-3} más</span>`:''}
+        ` : `<div style="text-align:center;padding:16px 0">
+          <div style="font-size:11px;color:var(--t3);margin-bottom:10px">Sin inversiones registradas</div>
+          <button onclick="document.querySelector('[data-tab=invest]').click()"
+            style="padding:7px 16px;border-radius:8px;border:1px solid #3b82f6;background:#3b82f618;color:#3b82f6;font-size:12px;cursor:pointer;font-weight:600">+ Registrar inversión</button>
+        </div>`}
+      </div>`;
+    })()}
+
     </div>`;
 
   fetchUSD();
   startClock();
+}
+
+function toggleUltimasTx() {
+  const body = document.getElementById('ultimasTxBody');
+  const btn  = document.getElementById('ultimasTxBtn');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (btn) btn.textContent = open ? 'Ver ▼' : 'Ocultar ▲';
 }
 
 function toggleCatDetail(cat) {
