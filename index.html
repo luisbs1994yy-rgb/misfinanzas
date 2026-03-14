@@ -279,6 +279,23 @@ textarea.inp{min-height:90px;resize:vertical;line-height:1.6}
 <!-- ══════ TOAST ══════ -->
 <div id="toast" class="toast"></div>
 
+<!-- ══════ PASSWORD SCREEN ══════ -->
+<div id="passwordScreen" style="display:flex;position:fixed;inset:0;z-index:9999;background:#060c16;align-items:center;justify-content:center">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:40px 36px;width:320px;text-align:center;box-shadow:0 20px 60px #000a">
+    <div style="font-size:36px;margin-bottom:8px">🔐</div>
+    <div style="font-size:22px;font-weight:800;font-family:'Syne',sans-serif;margin-bottom:4px">Mis<em style="color:var(--accent)">Finanzas</em></div>
+    <div style="font-size:12px;color:var(--t3);margin-bottom:28px">Ingresa tu contraseña para continuar</div>
+    <input type="password" id="pwdInput" placeholder="Contraseña"
+      style="width:100%;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:10px;color:var(--t1);font-size:16px;letter-spacing:4px;text-align:center;outline:none;box-sizing:border-box;font-family:'JetBrains Mono',monospace"
+      onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+      onkeydown="if(event.key==='Enter')checkPassword()">
+    <div id="pwdError" style="color:#ef4444;font-size:12px;margin-top:8px;min-height:18px"></div>
+    <button onclick="checkPassword()"
+      style="width:100%;margin-top:12px;padding:12px;border-radius:10px;background:var(--accent);color:#000;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:'Syne',sans-serif;transition:opacity .2s"
+      onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">Entrar →</button>
+  </div>
+</div>
+
 <!-- ══════ USER SELECT SCREEN ══════ -->
 <div id="userScreen" style="display:none">
   <div class="us-box">
@@ -326,6 +343,7 @@ textarea.inp{min-height:90px;resize:vertical;line-height:1.6}
     <div id="panel-statement"   class="panel"></div>
     <div id="panel-history"     class="panel"></div>
     <div id="panel-invest"      class="panel"></div>
+    <div id="panel-analisis"    class="panel"></div>
   </div>
 </div>
 
@@ -403,13 +421,13 @@ let S = {
   userColor:   "#f5a623",
   tab:         "overview",
   month:       CUR_MONTH,
-  monthOffset: 0,           // 0 = mes actual, 1-3 = meses futuros
-  cfWinStart:  0,           // primer viernes visible en la ventana de 6 columnas
+  monthOffset: 0,
+  cfWinStart:  0,
   incomes:     [],
   expenses:    [],
   statements:  [],
   pendingTxs:  null,
-  pendingMessages: null,   // mensajes listos para enviar a IA (esperando confirmación)
+  pendingMessages: null,
   bank:        "banorte",
   processing:  false,
   editModal:   null,
@@ -419,9 +437,11 @@ let S = {
   aiError:     null,
   aiRawResponse: null,
   expFilter:   "todos",
-  expView:     "lista",    // "lista" | "flujo"
+  expView:     "lista",
   usdRate:     null,
   investments: [],
+  metaAhorro:  null,        // { monto, label }
+  alertas:     [],          // [{ id, nombre, limite, categoria }]
 };
 
 // ════════════════════════════════════════════════════════════
@@ -463,6 +483,27 @@ function getInitials(name) {
 function selectKnownUser(name) {
   document.getElementById("usernameInput").value = name;
   enterApp();
+}
+
+const APP_PASSWORD = "1532022";
+
+function checkPassword() {
+  const input = document.getElementById("pwdInput")?.value;
+  const errEl = document.getElementById("pwdError");
+  if (input === APP_PASSWORD) {
+    document.getElementById("passwordScreen").style.display = "none";
+    // shake animation reset
+    if (errEl) errEl.textContent = "";
+  } else {
+    if (errEl) errEl.textContent = "❌ Contraseña incorrecta";
+    const box = document.getElementById("pwdInput");
+    if (box) {
+      box.style.borderColor = "#ef4444";
+      box.value = "";
+      box.focus();
+      setTimeout(() => { box.style.borderColor = "var(--border)"; }, 1500);
+    }
+  }
 }
 
 async function enterApp() {
@@ -728,7 +769,8 @@ function shiftMonth(dir) {
 function renderNav() {
   const tabs = [
     ["overview","📊 Resumen"],["expenses","💰 Ingresos & Gastos"],
-    ["statement","🏦 Estados"],["invest","📈 Inversiones"],["history","📂 Historial"],
+    ["statement","🏦 Estados"],["invest","📈 Inversiones"],
+    ["analisis","🎯 Análisis"],["history","📂 Historial"],
   ];
   document.getElementById("navBar").innerHTML = tabs.map(([id,lbl]) =>
     `<button class="nav-btn ${S.tab===id?'active':''}" onclick="setTab('${id}')">${lbl}</button>`
@@ -740,7 +782,7 @@ function setMonth(m) { S.month = m; renderMonthBar(); renderAll(); } // legacy
 function setTab(t) {
   S.tab = t;
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-  const panelId = ["history","statement","expenses","invest"].includes(t) ? t : "overview";
+  const panelId = ["history","statement","expenses","invest","analisis"].includes(t) ? t : "overview";
   document.getElementById("panel-" + panelId)?.classList.add("active");
   renderNav();
   renderAll();
@@ -753,6 +795,7 @@ function renderAll() {
   renderStatement();
   renderHistory();
   renderInvest();
+  renderAnalisis();
 }
 
 // ── Computed values ──
@@ -921,6 +964,9 @@ function renderOverview() {
           <span id="clockDate" style="color:var(--t3);font-size:10px;font-family:'JetBrains Mono',monospace"></span>
           <span id="clockTime" style="color:var(--accent);font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace"></span>
         </div>
+        <button onclick="toggleMobileView()" id="mobileViewBtn" title="Vista móvil"
+          style="background:var(--bg-input);border:1px solid var(--border-hi);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:14px;transition:all .2s"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-hi)'">📱</button>
         <button onclick="takeScreenshot()" title="Capturar resumen" style="background:var(--bg-input);border:1px solid var(--border-hi);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:14px;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-hi)'">📸</button>
       </div>
     </div>
@@ -1181,6 +1227,14 @@ function renderExpenses() {
         const fr=FREQS[e.frecuencia||"mensual"]; const m=toMonthly(e.amount,e.frecuencia||"mensual",e.diasCustom); const notM=e.frecuencia&&e.frecuencia!=="mensual";
         const dia=e.diaInicio||1; const npd=nextPayDay(dia,e.frecuencia||"mensual",e.diasCustom);
         const freqLabel=e.frecuencia==="personalizada"&&e.diasCustom?`c/${e.diasCustom}d`:fr.label;
+        const isRec = e.recurrente !== false;
+        const recBadge = `<span onclick="toggleRecurrente('${e.id}')" title="Clic para cambiar" 
+          style="cursor:pointer;padding:2px 7px;border-radius:99px;font-size:10px;font-family:'JetBrains Mono',monospace;
+          background:${isRec?'#22c55e18':'#94a3b818'};color:${isRec?'#22c55e':'#94a3b8'};
+          border:1px solid ${isRec?'#22c55e44':'#94a3b844'};user-select:none;transition:all .2s"
+          onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'">
+          ${isRec?'♾️ Recurrente':'1× Una vez'}
+        </span>`;
         return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:${idx%2===0?'var(--bg-card)':'#0d1829'};${idx>0?'border-top:1px solid var(--border)':''}">
           <div>
             <div style="font-size:12px;font-weight:500">${e.name}</div>
@@ -1188,6 +1242,7 @@ function renderExpenses() {
               <span class="badge" style="background:${fr.color}18;color:${fr.color};border:1px solid ${fr.color}44">${fr.icon} ${freqLabel}</span>
               <span class="badge" style="background:#22d3ee14;color:#22d3ee;border:1px solid #22d3ee33">📅 Día ${dia}</span>
               <span class="badge" style="background:${npd.color}14;color:${npd.color};border:1px solid ${npd.color}33">⏰ ${npd.label}</span>
+              ${recBadge}
             </div>
           </div>
           <div class="flex ai g8" style="text-align:right">
@@ -1368,13 +1423,24 @@ function renderCashFlow() {
 
   // Para cada columna: (mon/year/dim pueden variar)
   function dayToColIdx(mon, year, day) {
-    // Busca en la ventana visible el viernes que corresponde al día
-    let idx = -1;
+    // Fecha exacta del pago
+    const payDate = new Date(year, mon, day).getTime();
+    // Buscar el viernes visible más cercano ANTERIOR o igual al día de pago
+    let best = -1;
     for (let i = 0; i < nW; i++) {
       const w = weeks[i];
-      if (w.mon === mon && w.year === year && day >= w.day) idx = i;
+      const friDate = new Date(w.year, w.mon, w.day).getTime();
+      // El viernes debe ser del mismo mes que el pago Y anterior/igual al día
+      if (w.mon === mon && w.year === year && friDate <= payDate) best = i;
     }
-    return idx;
+    // Si no hay viernes anterior en el mismo mes, buscar el primer viernes del mes
+    if (best === -1) {
+      for (let i = 0; i < nW; i++) {
+        const w = weeks[i];
+        if (w.mon === mon && w.year === year) { best = i; break; }
+      }
+    }
+    return best;
   }
 
   // ── Distribución multi-mes ────────────────────────────────
@@ -2200,6 +2266,16 @@ async function addExpense(pre = '') {
   setTimeout(()=>{ const f=document.getElementById(pre+"eName"); if(f) f.focus(); }, 80);
 }
 
+async function toggleRecurrente(id) {
+  const exp = S.expenses.find(e => e.id === id);
+  if (!exp) return;
+  const newVal = exp.recurrente === false ? true : false;
+  exp.recurrente = newVal;
+  renderAll();
+  showToast(newVal ? '♾️ Ahora es recurrente' : '1× Solo una vez', 'info');
+  await api("update_expense", { expense: exp });
+}
+
 async function deleteExpense(id) {
   S.expenses=S.expenses.filter(e=>e.id!==id); renderAll();
   await api("delete_expense",{ id });
@@ -2943,8 +3019,290 @@ function closeDayPicker() {
 }
 
 // ════════════════════════════════════════════════════════════
-//  INIT
+//  ANÁLISIS: Metas · Comparativo · Alertas · Exportar PDF
 // ════════════════════════════════════════════════════════════
+function renderAnalisis() {
+  const el = document.getElementById("panel-analisis");
+  if (!el) return;
+
+  const tI = totalIncome();
+  const tE = totalExpense();
+  const bal = tI - tE;
+
+  // ── 1. COMPARATIVO MES A MES ─────────────────────────────
+  const compMonths = [];
+  for (let off = -5; off <= 0; off++) {
+    const absM = CUR_MONTH + off;
+    const mon  = ((absM % 12) + 12) % 12;
+    const yr   = CUR_YEAR + Math.floor(absM / 12);
+    const mExp = S.expenses.filter(e => e.month === mon);
+    const mInc = totalIncome(); // ingresos son fijos por ahora
+    const mGas = mExp.reduce((s,e) => s + toMonthly(e.amount, e.frecuencia||"mensual"), 0);
+    compMonths.push({ label: MONTHS[mon], mon, yr, inc: mInc, gas: mGas, bal: mInc - mGas });
+  }
+  const maxVal = Math.max(...compMonths.map(m => Math.max(m.inc, m.gas)), 1);
+  const barH = 100;
+  const compBars = compMonths.map((m, i) => {
+    const iH = Math.round((m.inc / maxVal) * barH);
+    const gH = Math.round((m.gas / maxVal) * barH);
+    const isCur = i === compMonths.length - 1;
+    return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:4px">
+      <div style="font-size:9px;color:var(--t3);font-family:'JetBrains Mono',monospace;text-align:center">
+        ${m.bal >= 0 ? '+' : ''}$${fmtMXN(Math.abs(m.bal))}
+      </div>
+      <div style="display:flex;gap:3px;align-items:flex-end;height:${barH}px">
+        <div title="Ingresos $${fmtMXN(m.inc)}" style="width:16px;height:${iH}px;background:#22c55e;border-radius:3px 3px 0 0;transition:height .5s;opacity:${isCur?1:.7}"></div>
+        <div title="Gastos $${fmtMXN(m.gas)}" style="width:16px;height:${gH}px;background:#ef4444;border-radius:3px 3px 0 0;transition:height .5s;opacity:${isCur?1:.7}"></div>
+      </div>
+      <div style="font-size:10px;font-weight:${isCur?700:400};color:${isCur?'var(--accent)':'var(--t3)'}">${m.label}</div>
+    </div>`;
+  }).join('');
+
+  // ── 2. META DE AHORRO ────────────────────────────────────
+  const meta = S.metaAhorro;
+  const metaPct = meta ? Math.min(100, Math.round((bal / meta.monto) * 100)) : 0;
+  const metaColor = metaPct >= 100 ? '#22c55e' : metaPct >= 60 ? '#f59e0b' : '#ef4444';
+  const metaSection = `
+    <div class="card" style="border:1px solid #22c55e33">
+      <div class="flex jb ai" style="margin-bottom:14px">
+        <div class="section-title" style="margin-bottom:0">🎯 Meta de ahorro mensual</div>
+        ${meta ? `<button onclick="S.metaAhorro=null;renderAnalisis()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:11px">Quitar meta</button>` : ''}
+      </div>
+      ${meta ? `
+        <div style="text-align:center;margin-bottom:14px">
+          <div style="font-size:11px;color:var(--t3);margin-bottom:4px">${meta.label || 'Meta'}</div>
+          <div class="mono" style="font-size:28px;font-weight:800;color:${metaColor}">${metaPct}%</div>
+          <div style="font-size:11px;color:var(--t3)">$${fmtMXN(Math.max(0,bal))} de $${fmtMXN(meta.monto)}</div>
+        </div>
+        <div style="background:#1a2d44;border-radius:8px;height:12px;overflow:hidden;margin-bottom:10px">
+          <div style="height:100%;width:${metaPct}%;background:linear-gradient(90deg,${metaColor},${metaColor}99);border-radius:8px;transition:width .8s ease"></div>
+        </div>
+        ${metaPct >= 100 ? '<div style="text-align:center;font-size:13px">🎉 ¡Meta alcanzada este mes!</div>' :
+          `<div style="font-size:11px;color:var(--t3);text-align:center">Te faltan $${fmtMXN(meta.monto - Math.max(0,bal))} para alcanzar tu meta</div>`}
+      ` : `
+        <div style="display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:end">
+          <div>
+            <div class="kpi-label mb8">Nombre de la meta</div>
+            <input class="inp" id="metaLabel" placeholder="Ej. Vacaciones, Fondo, Ahorro..." style="width:100%">
+          </div>
+          <div>
+            <div class="kpi-label mb8">Monto ($)</div>
+            <input class="inp" id="metaMonto" type="number" placeholder="0.00" style="width:110px">
+          </div>
+          <button onclick="guardarMeta()" class="btn btn-acc" style="padding:8px 16px">Guardar</button>
+        </div>
+      `}
+    </div>`;
+
+  // ── 3. ALERTAS DE GASTO ──────────────────────────────────
+  const alertasHtml = `
+    <div class="card" style="border:1px solid #f59e0b33">
+      <div class="section-title" style="margin-bottom:14px">🔔 Alertas de gasto</div>
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:end;margin-bottom:14px">
+        <div>
+          <div class="kpi-label mb8">Concepto o categoría</div>
+          <input class="inp" id="alertaNombre" placeholder="Ej. Gasolina, Comida..." style="width:100%">
+        </div>
+        <div>
+          <div class="kpi-label mb8">Límite ($)</div>
+          <input class="inp" id="alertaLimite" type="number" placeholder="500" style="width:100px">
+        </div>
+        <div>
+          <div class="kpi-label mb8">Categoría</div>
+          <select class="sel" id="alertaCat">
+            <option value="">Todas</option>
+            ${Object.keys(CATEGORIES).sort().map(c=>`<option>${c}</option>`).join('')}
+          </select>
+        </div>
+        <button onclick="agregarAlerta()" class="btn" style="padding:8px 14px;background:#f59e0b;color:#000;border-color:#f59e0b">+ Agregar</button>
+      </div>
+      ${S.alertas.length === 0
+        ? `<div style="color:var(--t3);font-size:12px;text-align:center;padding:16px">Sin alertas configuradas</div>`
+        : S.alertas.map(a => {
+            const gastoActual = S.expenses
+              .filter(e => e.month === S.month && (!a.categoria || e.category === a.categoria) && (!a.nombre || e.name.toLowerCase().includes(a.nombre.toLowerCase())))
+              .reduce((s,e) => s + toMonthly(e.amount, e.frecuencia||'mensual'), 0);
+            const pct = Math.min(100, Math.round(gastoActual / a.limite * 100));
+            const col = pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#22c55e';
+            return `<div style="padding:10px 12px;border-radius:8px;background:var(--bg);border:1px solid ${col}33;margin-bottom:8px">
+              <div class="flex jb ai" style="margin-bottom:6px">
+                <div>
+                  <span style="font-size:12px;font-weight:600">${a.nombre || 'Todos'}</span>
+                  ${a.categoria ? `<span class="badge" style="margin-left:6px;background:${catMeta(a.categoria).color}18;color:${catMeta(a.categoria).color};border:1px solid ${catMeta(a.categoria).color}33">${catMeta(a.categoria).icon} ${a.categoria}</span>` : ''}
+                </div>
+                <div class="flex ai g8">
+                  <span class="mono" style="font-size:11px;color:${col}">$${fmtMXN(gastoActual)} / $${fmtMXN(a.limite)}</span>
+                  ${pct >= 100 ? '<span style="font-size:11px">🚨</span>' : pct >= 80 ? '<span style="font-size:11px">⚠️</span>' : '<span style="font-size:11px">✅</span>'}
+                  <button onclick="S.alertas=S.alertas.filter(x=>x.id!=='${a.id}');renderAnalisis()" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:12px">✕</button>
+                </div>
+              </div>
+              <div style="background:#1a2d44;border-radius:4px;height:6px;overflow:hidden">
+                <div style="height:100%;width:${pct}%;background:${col};border-radius:4px;transition:width .5s"></div>
+              </div>
+              ${pct >= 100 ? `<div style="font-size:10px;color:#ef4444;margin-top:4px">⚠️ Límite superado este mes</div>` :
+                pct >= 80 ? `<div style="font-size:10px;color:#f59e0b;margin-top:4px">Cerca del límite (${pct}%)</div>` : ''}
+            </div>`;
+          }).join('')
+      }
+    </div>`;
+
+  el.innerHTML = `
+    <div class="section-title" style="color:${S.userColor};margin-bottom:16px">🎯 Análisis — ${S.user}</div>
+
+    <!-- Comparativo mes a mes -->
+    <div class="card mb16">
+      <div class="flex jb ai" style="margin-bottom:16px">
+        <div class="section-title" style="margin-bottom:0">📈 Comparativo mes a mes</div>
+        <div class="flex ai g8">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--t3)"><span style="width:10px;height:10px;background:#22c55e;border-radius:2px;display:inline-block"></span>Ingresos</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--t3)"><span style="width:10px;height:10px;background:#ef4444;border-radius:2px;display:inline-block"></span>Gastos</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding:0 8px">${compBars}</div>
+    </div>
+
+    <!-- 2 columnas: Meta + Alertas -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      ${metaSection}
+      ${alertasHtml}
+    </div>
+
+    <!-- Exportar PDF -->
+    <div class="card" style="border:1px solid #6366f133">
+      <div class="flex jb ai">
+        <div>
+          <div class="section-title" style="margin-bottom:4px">📄 Exportar reporte</div>
+          <div style="font-size:11px;color:var(--t3)">Genera un PDF con el resumen del mes actual</div>
+        </div>
+        <button onclick="exportarPDF()" class="btn" style="padding:10px 20px;background:#6366f1;color:#fff;border-color:#6366f1;font-weight:700">
+          📥 Descargar PDF
+        </button>
+      </div>
+    </div>`;
+}
+
+function guardarMeta() {
+  const monto = parseFloat(document.getElementById('metaMonto')?.value);
+  const label = document.getElementById('metaLabel')?.value?.trim() || 'Meta de ahorro';
+  if (!monto || monto <= 0) { showToast('Ingresa un monto válido','error'); return; }
+  S.metaAhorro = { monto, label };
+  renderAnalisis();
+  showToast('🎯 Meta guardada','success');
+}
+
+function agregarAlerta() {
+  const nombre = document.getElementById('alertaNombre')?.value?.trim();
+  const limite = parseFloat(document.getElementById('alertaLimite')?.value);
+  const categoria = document.getElementById('alertaCat')?.value;
+  if (!limite || limite <= 0) { showToast('Ingresa un límite válido','error'); return; }
+  S.alertas.push({ id: uid(), nombre, limite, categoria });
+  renderAnalisis();
+  showToast('🔔 Alerta guardada','success');
+}
+
+function exportarPDF() {
+  const tI = totalIncome();
+  const tE = totalExpense();
+  const bal = tI - tE;
+  const me  = monthExpenses();
+  const byCat = {};
+  me.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + toMonthly(e.amount, e.frecuencia||'mensual'); });
+
+  const rows = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([cat,val]) =>
+    `<tr><td>${catMeta(cat).icon} ${cat}</td><td style="text-align:right;color:#ef4444">-$${fmtMXN(val)}</td><td style="text-align:right">${tE>0?Math.round(val/tE*100):0}%</td></tr>`
+  ).join('');
+
+  const incRows = S.incomes.map(i =>
+    `<tr><td>💼 ${i.name}</td><td style="text-align:right;color:#22c55e">+$${fmtMXN(toMonthly(i.amount,i.frecuencia))}</td><td>${FREQS[i.frecuencia||'mensual']?.label||''}</td></tr>`
+  ).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body{font-family:Arial,sans-serif;color:#1a1a2e;padding:32px;max-width:800px;margin:0 auto}
+    h1{color:#f5a623;font-size:28px;margin-bottom:4px}
+    h2{font-size:16px;color:#3b82f6;margin:20px 0 8px;border-bottom:2px solid #e5e7eb;padding-bottom:4px}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:16px 0}
+    .kpi{border-radius:10px;padding:16px;text-align:center;border:1px solid #e5e7eb}
+    .kpi-val{font-size:22px;font-weight:800;margin:4px 0}
+    .kpi-lbl{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#f3f4f6;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280}
+    td{padding:8px 12px;border-bottom:1px solid #f3f4f6}
+    .footer{margin-top:32px;font-size:11px;color:#9ca3af;text-align:center}
+  </style></head><body>
+  <h1>MisFinanzas</h1>
+  <p style="color:#6b7280;margin-top:0">Reporte mensual — ${MONTHS_FULL[S.month]} ${CUR_YEAR} · ${S.user}</p>
+  <div class="kpis">
+    <div class="kpi" style="border-color:#22c55e44"><div class="kpi-lbl">Ingresos</div><div class="kpi-val" style="color:#22c55e">+$${fmtMXN(tI)}</div></div>
+    <div class="kpi" style="border-color:#ef444444"><div class="kpi-lbl">Gastos</div><div class="kpi-val" style="color:#ef4444">-$${fmtMXN(tE)}</div></div>
+    <div class="kpi" style="border-color:${bal>=0?'#3b82f644':'#ef444444'}"><div class="kpi-lbl">Balance</div><div class="kpi-val" style="color:${bal>=0?'#3b82f6':'#ef4444'}">${bal>=0?'+':''}$${fmtMXN(bal)}</div></div>
+  </div>
+  <h2>💰 Ingresos</h2>
+  <table><thead><tr><th>Fuente</th><th style="text-align:right">Monto/mes</th><th>Frecuencia</th></tr></thead>
+  <tbody>${incRows}</tbody></table>
+  <h2>💸 Gastos por categoría</h2>
+  <table><thead><tr><th>Categoría</th><th style="text-align:right">Total</th><th style="text-align:right">% del gasto</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <div class="footer">Generado el ${new Date().toLocaleDateString('es-MX',{year:'numeric',month:'long',day:'numeric'})} · MisFinanzas</div>
+  </body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  if (win) {
+    win.onload = () => { win.print(); };
+    showToast('📄 Reporte listo — usa Ctrl+P para guardar como PDF','info');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MOBILE VIEW TOGGLE
+// ════════════════════════════════════════════════════════════
+let _mobileView = false;
+
+function toggleMobileView() {
+  _mobileView = !_mobileView;
+  const btn = document.getElementById('mobileViewBtn');
+  const app = document.getElementById('app');
+
+  if (_mobileView) {
+    app.style.maxWidth = '420px';
+    app.style.margin   = '0 auto';
+    if (btn) {
+      btn.textContent       = '🖥️';
+      btn.style.background  = 'var(--accent)22';
+      btn.style.borderColor = 'var(--accent)';
+      btn.title             = 'Vista escritorio';
+    }
+    // Colapsar grids a 1 columna
+    document.querySelectorAll('#panel-overview .g2, #panel-overview .g3').forEach(el => {
+      el.dataset.origCols = el.style.gridTemplateColumns;
+      el.style.gridTemplateColumns = '1fr';
+    });
+    document.querySelectorAll('#panel-overview [style*="grid-template-columns:1fr 1fr"]').forEach(el => {
+      el.dataset.origStyle = el.getAttribute('style');
+      el.style.gridTemplateColumns = '1fr';
+    });
+    showToast('📱 Vista móvil activada','info');
+  } else {
+    app.style.maxWidth = '';
+    app.style.margin   = '';
+    if (btn) {
+      btn.textContent       = '📱';
+      btn.style.background  = 'var(--bg-input)';
+      btn.style.borderColor = 'var(--border-hi)';
+      btn.title             = 'Vista móvil';
+    }
+    document.querySelectorAll('#panel-overview .g2, #panel-overview .g3').forEach(el => {
+      if (el.dataset.origCols !== undefined) el.style.gridTemplateColumns = el.dataset.origCols;
+    });
+    document.querySelectorAll('#panel-overview [data-orig-style]').forEach(el => {
+      el.setAttribute('style', el.dataset.origStyle);
+    });
+    showToast('🖥️ Vista escritorio activada','info');
+  }
+}
+
 // Auto-login fijo como Luis
 document.getElementById("usernameInput").value = "Luis";
 enterApp();
