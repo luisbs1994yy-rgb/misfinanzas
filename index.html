@@ -2318,22 +2318,35 @@ function renderComisiones() {
           const bgColor = c.pagado ? '#22c55e15' : '#ef444415';
           const borderColor = c.pagado ? '#22c55e' : '#ef4444';
           return `
-          <div style="display:grid;grid-template-columns:80px 120px 100px 100px 60px 40px 30px;gap:8px;align-items:center;padding:8px 10px;background:${bgColor};border-left:3px solid ${borderColor};border-radius:4px;font-size:11px">
-            <div style="font-weight:600;color:var(--t1)">${c.oc}</div>
-            <div style="color:var(--t2)">${c.producto}</div>
-            <div style="text-align:right;color:var(--t3)">${litros.toLocaleString('es')}</div>
-            <div style="text-align:right;font-weight:600;color:var(--accent)">$${totalRow.toFixed(2)}</div>
-            <input type="checkbox" id="pagado-${c.id}" ${c.pagado ? 'checked' : ''} onchange="togglePagado('${c.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:${c.pagado ? '#22c55e' : '#ef4444'};justify-self:center">
-            <button onclick="toggleEditMode('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:var(--accent)">✏️</button>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto auto auto auto;gap:8px;align-items:center;padding:8px 10px;background:${bgColor};border-left:3px solid ${borderColor};border-radius:4px;font-size:11px">
+            <div>
+              <div style="font-weight:600;color:var(--t1)">OC ${c.oc}</div>
+              <div style="font-size:10px;color:var(--t3)">📦 ${c.producto} | 📅 ${c.fecha}</div>
+            </div>
+            <div style="text-align:center;color:var(--t3)">📍 ${litros.toLocaleString('es')} L</div>
+            <div style="text-align:center;font-weight:600;color:var(--accent)">$${totalRow.toFixed(2)}</div>
+            <div style="display:flex;flex-direction:column;gap:3px;text-align:center">
+              <label style="font-size:9px;color:var(--t3)">Cobrada</label>
+              <input type="checkbox" id="cobrada-${c.id}" ${c.cobrada ? 'checked' : ''} onchange="toggleCobrada('${c.id}')" style="cursor:pointer;width:14px;height:14px;accent-color:#22c55e;justify-self:center">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:3px;text-align:center">
+              <label style="font-size:9px;color:var(--t3)">Pagada</label>
+              <input type="checkbox" id="pagado-${c.id}" ${c.pagada ? 'checked' : ''} onchange="togglePagada('${c.id}')" style="cursor:pointer;width:14px;height:14px;accent-color:#22c55e;justify-self:center">
+            </div>
+            <button onclick="toggleEditMode('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:12px;padding:2px 4px;color:var(--accent)">✏️</button>
             <button class="btn-del" onclick="deleteComision('${c.id}')" style="padding:2px;font-size:12px">✕</button>
           </div>
           
           ${document.getElementById('editMode-' + c.id) ? `
-          <div id="editMode-${c.id}" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:8px;background:var(--bg-input);border-radius:4px;margin-bottom:4px">
-            <div><label style="font-size:10px;color:var(--t3)">$ Com 1</label><input type="number" id="edit-com1-${c.id}" value="${com1}" min="0.01" max="99.99" step="0.01" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
-            <div><label style="font-size:10px;color:var(--t3)">$ Com 2</label><input type="number" id="edit-com2-${c.id}" value="${com2}" min="0.01" max="99.99" step="0.01" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
-            <button onclick="saveComisionEdit('${c.id}')" style="padding:4px 8px;background:var(--green);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600">Guardar</button>
-            <button onclick="cancelEdit('${c.id}')" style="padding:4px 8px;background:var(--border-hi);color:var(--t1);border:none;border-radius:3px;cursor:pointer;font-size:10px">Cancelar</button>
+          <div id="editMode-${c.id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px;padding:10px;background:var(--bg-input);border-radius:4px;margin-bottom:4px">
+            <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Fecha</label><input type="date" id="edit-fecha-${c.id}" value="${c.fecha}" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
+            <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Producto</label><select id="edit-producto-${c.id}" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"><option value="NAFTA NIXON" ${c.producto === "NAFTA NIXON" ? "selected" : ""}>NAFTA NIXON</option><option value="ETANOL" ${c.producto === "ETANOL" ? "selected" : ""}>ETANOL</option><option value="CAMPER" ${c.producto === "CAMPER" ? "selected" : ""}>CAMPER</option></select></div>
+            <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Litros</label><input type="number" id="edit-litros-${c.id}" value="${c.litros}" min="1" max="99999" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
+            <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">$ Total</label><input type="number" id="edit-total-${c.id}" value="${totalRow.toFixed(2)}" min="0.01" max="999999" step="0.01" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
+            <div style="display:flex;gap:4px;align-items:flex-end">
+              <button onclick="saveComisionEdit('${c.id}')" style="padding:4px 8px;background:var(--green);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;flex:1">✓ Guardar</button>
+              <button onclick="cancelEdit('${c.id}')" style="padding:4px 8px;background:var(--border-hi);color:var(--t1);border:none;border-radius:3px;cursor:pointer;font-size:10px;flex:1">✕ Cancelar</button>
+            </div>
           </div>
           ` : ''}
           `;
@@ -2341,7 +2354,10 @@ function renderComisiones() {
       </div>`;
 
   el.innerHTML = `
-    <div class="section-title" style="color:${S.userColor}">💰 Comisiones — ${S.user}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="section-title" style="color:${S.userColor};margin:0">💰 Comisiones — ${S.user}</div>
+      <button onclick="renderComisiones()" style="background:var(--accent);color:#000;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s">🔄 Actualizar</button>
+    </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
       ${[
@@ -2359,7 +2375,7 @@ function renderComisiones() {
       <div class="section-title" style="font-size:13px;margin-bottom:12px;text-align:center">➕ Agregar comisión</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
         <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">Fecha</div><input class="inp" id="comFecha" type="date" style="padding:8px;font-size:11px;width:100%;text-align:center"></div>
-        <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">OC</div><input class="inp" id="comOC" type="text" placeholder="4670" style="padding:8px;font-size:11px;text-align:center;width:100%"></div>
+        <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">OC</div><input class="inp" id="comOC" type="text" style="padding:8px;font-size:11px;text-align:center;width:100%"></div>
         <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">Producto</div>
           <select class="sel" id="comProducto" style="width:100%;padding:8px;font-size:11px;text-align:center">
             <option value="">Selecciona</option>
@@ -2372,7 +2388,15 @@ function renderComisiones() {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px">
         <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">Litros</div><input class="inp" id="comLitros" type="number" min="1" max="99999" step="1" placeholder="0" style="padding:6px;font-size:10px;text-align:center" oninput="autoCalcComision1()"></div>
         <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Precio</div><input class="inp" id="comPrecio" type="text" maxlength="5" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center" oninput="formatPrecio(this)"></div>
-        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Com/Lt</div><input class="inp" id="comDatoAdicional" type="number" min="0.01" max="9.99" step="0.01" placeholder="0.00" style="padding:6px;font-size:10px;text-align:center" oninput="autoCalcComision1()"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Com/Lt</div>
+          <div style="display:contents" id="comltContainer">
+            <select class="sel" id="comDatoAdicional" style="width:100%;padding:6px;font-size:10px;text-align:center" onchange="toggleOtraComision()">
+              <option value="0.05">0.05</option>
+              <option value="0.10" selected>0.10</option>
+              <option value="otra">Otra</option>
+            </select>
+          </div>
+        </div>
         <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ C1</div><input class="inp" id="comComision1" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center" oninput="updateTotal()"></div>
         <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ C2</div><input class="inp" id="comComision2" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center"></div>
         <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Total</div><input class="inp" id="comTotalRef" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" readonly style="padding:6px;font-size:10px;text-align:center;background:var(--bg-input);cursor:not-allowed"></div>
@@ -2388,8 +2412,8 @@ function renderComisiones() {
       </div>
       <div style="padding:20px">
         ${(() => {
-          const pagadas = S.comisiones.filter(c => c.pagado).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
-          const pendientes = S.comisiones.filter(c => !c.pagado).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
+          const pagadas = S.comisiones.filter(c => c.pagada).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
+          const pendientes = S.comisiones.filter(c => !c.pagada).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
           const total = pagadas + pendientes;
           const pagadaPct = total > 0 ? (pagadas / total * 100).toFixed(1) : 0;
           const pendientePct = total > 0 ? (pendientes / total * 100).toFixed(1) : 0;
@@ -2461,6 +2485,24 @@ function renderComisiones() {
     fechaEl.value = new Date().toISOString().split('T')[0];
   }
 
+  // Scroll automático al registro de comisiones
+  setTimeout(() => {
+    const registroEl = document.querySelector('[style*="Registro de comisiones"]')?.parentElement;
+    if (registroEl) {
+      registroEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 100);
+
+}
+
+function updateComisionesUI() {
+  // Forzar visibilidad del panel
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  document.getElementById("panel-comisiones")?.classList.add("active");
+  S.tab = "comisiones";
+  
+  // Re-renderizar
+  renderComisiones();
 }
 
 function addComision() {
@@ -2469,7 +2511,20 @@ function addComision() {
   const producto = document.getElementById("comProducto")?.value;
   const litros = parseFloat(document.getElementById("comLitros")?.value) || 0;
   const precio = parseFloat(document.getElementById("comPrecio")?.value) || 0;
-  const datoAdicional = document.getElementById("comDatoAdicional")?.value;
+  
+  // Obtener valor de Com/Lt (select o input)
+  let datoAdicional = 0;
+  const selectEl = document.getElementById("comDatoAdicional");
+  if (selectEl && selectEl.tagName === "SELECT") {
+    datoAdicional = selectEl.value;
+  } else {
+    // Es un input (otra)
+    const inputEl = document.querySelector('input[type="number"][placeholder="0.00"]');
+    if (inputEl) {
+      datoAdicional = inputEl.value || "0";
+    }
+  }
+  
   const comision1 = parseFloat(document.getElementById("comComision1")?.value) || 0;
   const comision2 = parseFloat(document.getElementById("comComision2")?.value) || 0;
 
@@ -2478,7 +2533,7 @@ function addComision() {
     return;
   }
 
-  S.comisiones.push({ id: uid(), fecha, oc, producto, litros, precio, datoAdicional, comision1, comision2 });
+  S.comisiones.push({ id: uid(), fecha, oc, producto, litros, precio, datoAdicional, comision1, comision2, cobrada: false, pagada: false });
   
   // Limpiar formulario
   document.getElementById("comFecha").value = new Date().toISOString().split('T')[0];
@@ -2486,14 +2541,26 @@ function addComision() {
   document.getElementById("comProducto").value = "";
   document.getElementById("comLitros").value = "";
   document.getElementById("comPrecio").value = "";
-  document.getElementById("comDatoAdicional").value = "";
+  
+  // Restaurar Com/Lt al default
+  const container = document.getElementById("comltContainer");
+  container.innerHTML = `<select class="sel" id="comDatoAdicional" style="width:100%;padding:6px;font-size:10px;text-align:center" onchange="toggleOtraComision()">
+    <option value="0.05">0.05</option>
+    <option value="0.10" selected>0.10</option>
+    <option value="otra">Otra</option>
+  </select>`;
+  
   document.getElementById("comComision1").value = "";
   document.getElementById("comComision2").value = "";
   document.getElementById("comTotalRef").value = "";
 
   saveUser();
-  renderComisiones();
   showToast("✅ Comisión agregada", "success");
+  
+  // Cambiar a pestaña comisiones y actualizar después de 5 segundos
+  setTimeout(() => {
+    setTab("comisiones");
+  }, 5000);
 }
 
 function deleteComision(id) {
@@ -2513,6 +2580,36 @@ function togglePagado(id) {
   }
 }
 
+function toggleCobrada(id) {
+  const comision = S.comisiones.find(c => c.id === id);
+  if (comision) {
+    comision.cobrada = !comision.cobrada;
+    saveUser();
+    
+    // Actualizar UI si el panel está visible
+    if (S.tab === "comisiones") {
+      renderComisiones();
+    }
+    
+    showToast(comision.cobrada ? "✅ Marcado como cobrado" : "⏳ Marcado como no cobrado", "success");
+  }
+}
+
+function togglePagada(id) {
+  const comision = S.comisiones.find(c => c.id === id);
+  if (comision) {
+    comision.pagada = !comision.pagada;
+    saveUser();
+    
+    // Actualizar UI si el panel está visible
+    if (S.tab === "comisiones") {
+      renderComisiones();
+    }
+    
+    showToast(comision.pagada ? "✅ Marcado como pagado" : "⏳ Marcado como pendiente", "success");
+  }
+}
+
 function toggleEditMode(id) {
   const editEl = document.getElementById('editMode-' + id);
   if (editEl) {
@@ -2529,14 +2626,36 @@ function toggleEditMode(id) {
 function saveComisionEdit(id) {
   const comision = S.comisiones.find(c => c.id === id);
   if (comision) {
-    const com1 = parseFloat(document.getElementById('edit-com1-' + id)?.value) || 0;
-    const com2 = parseFloat(document.getElementById('edit-com2-' + id)?.value) || 0;
+    // Obtener valores editados
+    const fecha = document.getElementById('edit-fecha-' + id)?.value;
+    const producto = document.getElementById('edit-producto-' + id)?.value;
+    const litros = parseFloat(document.getElementById('edit-litros-' + id)?.value) || 0;
+    const total = parseFloat(document.getElementById('edit-total-' + id)?.value) || 0;
     
-    comision.comision1 = com1;
-    comision.comision2 = com2;
+    // Validar
+    if (!fecha || !producto || litros <= 0 || total <= 0) {
+      showToast("Completa todos los campos correctamente", "error");
+      return;
+    }
+    
+    // Actualizar comisión
+    comision.fecha = fecha;
+    comision.producto = producto;
+    comision.litros = litros;
+    // Para el total, distribuimos entre com1 y com2 (si hay ambos, mantenemos la proporción)
+    if (comision.comision1 > 0 && comision.comision2 > 0) {
+      const totalActual = comision.comision1 + comision.comision2;
+      const ratio = total / totalActual;
+      comision.comision1 = (comision.comision1 * ratio).toFixed(2);
+      comision.comision2 = (comision.comision2 * ratio).toFixed(2);
+    } else {
+      comision.comision1 = total;
+      comision.comision2 = 0;
+    }
+    
     saveUser();
     renderComisiones();
-    showToast("✅ Comisiones actualizadas", "success");
+    showToast("✅ Comisión actualizada", "success");
   }
 }
 
@@ -2562,8 +2681,42 @@ function formatPrecio(input) {
   autoCalcComision1();
 }
 
+function toggleOtraComision() {
+  const select = document.getElementById("comDatoAdicional");
+  const container = document.getElementById("comltContainer");
+  
+  if (select.value === "otra") {
+    // Reemplazar select con input
+    container.innerHTML = `<input class="inp" id="comOtraValor" type="number" min="0.01" max="9.99" step="0.01" placeholder="0.00" style="padding:6px;font-size:10px;text-align:center;width:100%" oninput="autoCalcComision1()" autofocus>
+      <input type="hidden" id="comDatoAdicional" value="otra">`;
+  } else {
+    // Restaurar select
+    container.innerHTML = `<select class="sel" id="comDatoAdicional" style="width:100%;padding:6px;font-size:10px;text-align:center" onchange="toggleOtraComision()">
+      <option value="0.05" ${select.value === "0.05" ? "selected" : ""}>0.05</option>
+      <option value="0.10" ${select.value === "0.10" || select.value !== "otra" ? "selected" : ""}>0.10</option>
+      <option value="otra">Otra</option>
+    </select>`;
+    autoCalcComision1();
+  }
+}
+
 function autoCalcComision1() {
-  const comXLt = parseFloat(document.getElementById("comDatoAdicional")?.value) || 0;
+  let comXLt = 0;
+  
+  // Buscar si hay un input de "otra" visible
+  const otraInput = document.getElementById("comltContainer")?.querySelector('input[type="number"]');
+  
+  if (otraInput) {
+    // Si existe input "otra", usar ese valor
+    comXLt = parseFloat(otraInput.value) || 0;
+  } else {
+    // Si no, buscar el select
+    const selectEl = document.getElementById("comDatoAdicional");
+    if (selectEl && selectEl.tagName === "SELECT") {
+      comXLt = parseFloat(selectEl.value) || 0;
+    }
+  }
+  
   const litros = parseFloat(document.getElementById("comLitros")?.value) || 0;
   const com1 = (comXLt * litros).toFixed(2);
   
