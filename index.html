@@ -214,6 +214,7 @@ textarea.inp{min-height:90px;resize:vertical;line-height:1.6}
 .btn-danger{background:#ef444415;border:1px solid #ef444430;color:var(--red)}
 .btn-del{background:transparent;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:2px 6px;transition:color .15s}
 .btn-del:hover{color:var(--red)}
+.edit-panel[style*="display: grid"]{display:grid !important;grid-template-columns:repeat(auto-fit,minmax(100px,1fr))}
 .btn-edit-sm{background:transparent;border:1px solid var(--border-hi);border-radius:6px;color:var(--t2);cursor:pointer;font-size:11px;padding:3px 8px;font-family:'JetBrains Mono',monospace;transition:all .15s}
 .btn-edit-sm:hover{border-color:var(--accent);color:var(--accent)}
 
@@ -520,6 +521,94 @@ function getInitials(name) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0,2);
 }
 
+function saveUser() {
+  // Guardar datos en localStorage también como respaldo
+  const userData = {
+    user: S.user,
+    incomes: S.incomes,
+    expenses: S.expenses,
+    statements: S.statements,
+    investments: S.investments,
+    alertas: S.alertas,
+    comisiones: S.comisiones,
+    metaAhorro: S.metaAhorro,
+    bank: S.bank,
+    usdRate: S.usdRate
+  };
+  localStorage.setItem(`mf_data_${S.user}`, JSON.stringify(userData));
+  
+  // Guardar comisiones en Google Sheets
+  if (S.comisiones && S.comisiones.length > 0) {
+    saveComisionesToSheets();
+  }
+}
+
+async function saveComisionesToSheets() {
+  try {
+    const SHEET_ID = "1LPmwobVzMelcR-vCwTQ0YEQF0INDFd7sPaMkl9upeZA";
+    const SHEET_NAME = "Comisiones";
+    
+    // Preparar datos de comisiones
+    const rows = S.comisiones.map(c => [
+      c.id || "",
+      S.user || "",
+      c.fecha || "",
+      c.oc || "",
+      c.producto || "",
+      c.litros || "",
+      c.precio || "",
+      c.datoAdicional || "",
+      c.comision1 || "",
+      c.comision2 || "",
+      c.cobrada ? 1 : 0,
+      c.pagada ? 1 : 0,
+      new Date().toISOString()
+    ]);
+    
+    // Usar Sheets API para agregar filas
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${SHEET_NAME}!A:M:append?valueInputOption=USER_ENTERED&key=AIzaSyDjCQaLj_R0w2e0j8E9kXv3C8ZO_l9E2Cg`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        values: rows
+      })
+    });
+    
+    if (response.ok) {
+      console.log("✅ Comisiones guardadas en Google Sheets");
+    } else {
+      console.error("Error guardando en Sheets:", response.status);
+    }
+  } catch (error) {
+    console.error("Error al guardar en Google Sheets:", error);
+  }
+}
+
+function loadUserData() {
+  // Cargar datos del localStorage
+  const data = localStorage.getItem(`mf_data_${S.user}`);
+  if (data) {
+    try {
+      const userData = JSON.parse(data);
+      S.incomes = userData.incomes || [];
+      S.expenses = userData.expenses || [];
+      S.statements = userData.statements || [];
+      S.investments = userData.investments || [];
+      S.alertas = userData.alertas || [];
+      S.comisiones = userData.comisiones || [];
+      S.metaAhorro = userData.metaAhorro || null;
+      S.bank = userData.bank || "banorte";
+      S.usdRate = userData.usdRate || null;
+    } catch (e) {
+      console.error("Error cargando datos:", e);
+    }
+  }
+}
+
 function selectKnownUser(name) {
   document.getElementById("usernameInput").value = name;
   enterApp();
@@ -540,18 +629,29 @@ function checkPassword() {
     }
     APP_PASSWORD = input;
     isFirstPasswordSet = true;
-    localStorage.setItem("app_pwd", input); // Guardar contraseña
+    localStorage.setItem("app_pwd", input);
     localStorage.setItem("app_pwd_set", "true");
     document.getElementById("passwordScreen").style.display = "none";
-    initializeApp("Luis");
-    if (errEl) errEl.textContent = "";
-    showToast("✅ Contraseña establecida correctamente", "success");
+    try {
+      initializeApp("Luis");
+      if (errEl) errEl.textContent = "";
+      showToast("✅ Contraseña establecida correctamente", "success");
+    } catch (e) {
+      console.error("Error al inicializar:", e);
+      if (errEl) errEl.textContent = "❌ Error al inicializar la app";
+    }
   } else {
     // Verificar contraseña
     if (input === APP_PASSWORD) {
       document.getElementById("passwordScreen").style.display = "none";
-      initializeApp("Luis");
-      if (errEl) errEl.textContent = "";
+      try {
+        initializeApp("Luis");
+        if (errEl) errEl.textContent = "";
+      } catch (e) {
+        console.error("Error al inicializar:", e);
+        if (errEl) errEl.textContent = "❌ Error al acceder";
+        document.getElementById("passwordScreen").style.display = "flex";
+      }
     } else {
       if (errEl) errEl.textContent = "❌ Contraseña incorrecta";
       const box = document.getElementById("pwdInput");
@@ -568,6 +668,10 @@ function checkPassword() {
 function initializeApp(username) {
   S.user = username;
   S.userColor = getUserColor(username);
+  
+  // Cargar datos guardados
+  loadUserData();
+  
   document.getElementById("app").classList.add("visible");
   
   // Header avatar
@@ -2337,8 +2441,7 @@ function renderComisiones() {
             <button class="btn-del" onclick="deleteComision('${c.id}')" style="padding:2px;font-size:12px">✕</button>
           </div>
           
-          ${document.getElementById('editMode-' + c.id) ? `
-          <div id="editMode-${c.id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px;padding:10px;background:var(--bg-input);border-radius:4px;margin-bottom:4px">
+          <div id="editMode-${c.id}" style="display:none;gap:6px;padding:10px;background:var(--bg-input);border-radius:4px;margin-bottom:4px" class="edit-panel">
             <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Fecha</label><input type="date" id="edit-fecha-${c.id}" value="${c.fecha}" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
             <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Producto</label><select id="edit-producto-${c.id}" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"><option value="NAFTA NIXON" ${c.producto === "NAFTA NIXON" ? "selected" : ""}>NAFTA NIXON</option><option value="ETANOL" ${c.producto === "ETANOL" ? "selected" : ""}>ETANOL</option><option value="CAMPER" ${c.producto === "CAMPER" ? "selected" : ""}>CAMPER</option></select></div>
             <div><label style="font-size:9px;color:var(--t3);display:block;margin-bottom:2px">Litros</label><input type="number" id="edit-litros-${c.id}" value="${c.litros}" min="1" max="99999" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
@@ -2348,8 +2451,6 @@ function renderComisiones() {
               <button onclick="cancelEdit('${c.id}')" style="padding:4px 8px;background:var(--border-hi);color:var(--t1);border:none;border-radius:3px;cursor:pointer;font-size:10px;flex:1">✕ Cancelar</button>
             </div>
           </div>
-          ` : ''}
-          `;
         }).join('')}
       </div>`;
 
@@ -2613,13 +2714,11 @@ function togglePagada(id) {
 function toggleEditMode(id) {
   const editEl = document.getElementById('editMode-' + id);
   if (editEl) {
-    editEl.style.display = editEl.style.display === 'none' ? 'grid' : 'none';
-  } else {
-    renderComisiones();
-    setTimeout(() => {
-      const newEditEl = document.getElementById('editMode-' + id);
-      if (newEditEl) newEditEl.style.display = 'grid';
-    }, 50);
+    if (editEl.style.display === 'none' || editEl.style.display === '') {
+      editEl.style.display = 'grid';
+    } else {
+      editEl.style.display = 'none';
+    }
   }
 }
 
@@ -2641,21 +2740,29 @@ function saveComisionEdit(id) {
     // Actualizar comisión
     comision.fecha = fecha;
     comision.producto = producto;
-    comision.litros = litros;
-    // Para el total, distribuimos entre com1 y com2 (si hay ambos, mantenemos la proporción)
-    if (comision.comision1 > 0 && comision.comision2 > 0) {
-      const totalActual = comision.comision1 + comision.comision2;
-      const ratio = total / totalActual;
-      comision.comision1 = (comision.comision1 * ratio).toFixed(2);
-      comision.comision2 = (comision.comision2 * ratio).toFixed(2);
+    comision.litros = parseFloat(litros);
+    
+    // Para el total, distribuimos entre com1 y com2
+    const totalNum = parseFloat(total);
+    if (parseFloat(comision.comision1) > 0 && parseFloat(comision.comision2) > 0) {
+      const totalActual = parseFloat(comision.comision1) + parseFloat(comision.comision2);
+      if (totalActual > 0) {
+        const ratio = totalNum / totalActual;
+        comision.comision1 = parseFloat((parseFloat(comision.comision1) * ratio).toFixed(2));
+        comision.comision2 = parseFloat((parseFloat(comision.comision2) * ratio).toFixed(2));
+      }
     } else {
-      comision.comision1 = total;
+      comision.comision1 = totalNum;
       comision.comision2 = 0;
     }
     
     saveUser();
-    renderComisiones();
     showToast("✅ Comisión actualizada", "success");
+    
+    // Actualizar después de 500ms
+    setTimeout(() => {
+      renderComisiones();
+    }, 500);
   }
 }
 
