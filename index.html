@@ -310,6 +310,7 @@ textarea.inp{min-height:90px;resize:vertical;line-height:1.6}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 </head>
 <body>
 
@@ -380,6 +381,7 @@ textarea.inp{min-height:90px;resize:vertical;line-height:1.6}
     <div id="panel-statement"   class="panel"></div>
     <div id="panel-history"     class="panel"></div>
     <div id="panel-invest"      class="panel"></div>
+    <div id="panel-comisiones"  class="panel"></div>
     <div id="panel-analisis"    class="panel"></div>
   </div>
 </div>
@@ -479,6 +481,7 @@ let S = {
   investments: [],
   metaAhorro:  null,        // { monto, label }
   alertas:     [],          // [{ id, nombre, limite, categoria }]
+  comisiones:  [],          // [{ id, fecha, oc, producto, sistema, litros, precio, comision, total }]
 };
 
 // ════════════════════════════════════════════════════════════
@@ -537,14 +540,17 @@ function checkPassword() {
     }
     APP_PASSWORD = input;
     isFirstPasswordSet = true;
+    localStorage.setItem("app_pwd", input); // Guardar contraseña
     localStorage.setItem("app_pwd_set", "true");
     document.getElementById("passwordScreen").style.display = "none";
+    initializeApp("Luis");
     if (errEl) errEl.textContent = "";
     showToast("✅ Contraseña establecida correctamente", "success");
   } else {
     // Verificar contraseña
     if (input === APP_PASSWORD) {
       document.getElementById("passwordScreen").style.display = "none";
+      initializeApp("Luis");
       if (errEl) errEl.textContent = "";
     } else {
       if (errEl) errEl.textContent = "❌ Contraseña incorrecta";
@@ -557,6 +563,27 @@ function checkPassword() {
       }
     }
   }
+}
+
+function initializeApp(username) {
+  S.user = username;
+  S.userColor = getUserColor(username);
+  document.getElementById("app").classList.add("visible");
+  
+  // Header avatar
+  document.getElementById("headerAvatar").style.background = S.userColor + "33";
+  document.getElementById("headerAvatar").style.color = S.userColor;
+  document.getElementById("headerAvatar").style.border = `1px solid ${S.userColor}66`;
+  document.getElementById("headerAvatar").textContent = getInitials(username);
+  document.getElementById("headerName").textContent = username;
+  
+  // User badge visible
+  document.querySelector(".user-badge").style.display = "flex";
+  
+  renderMonthBar();
+  renderNav();
+  renderAll();
+  loadData();
 }
 
 async function enterApp() {
@@ -697,57 +724,38 @@ function nextPayDay(diaInicio, freq, diasCustom) {
 
 // Shared expense add form HTML
 function expFormHTML(ctx = '') {
-  const freqOpts = Object.entries(FREQS).map(([k,f])=>`<option value="${k}">${f.icon} ${f.label}</option>`).join('');
+  const freqOpts = Object.entries(FREQS).map(([k,f])=>`<option value="${k}">${f.icon}</option>`).join('');
   const pre = ctx ? ctx+'-' : '';
   return `
-    <div style="flex:2;min-width:140px"><div class="kpi-label mb8">Concepto</div><input class="inp" id="${pre}eName" placeholder="Ej. Agua, Netflix..." oninput="onSentenceCase(this)" style="width:100%"></div>
-    <div style="flex:1;min-width:90px"><div class="kpi-label mb8">Monto ($)</div><input class="inp" id="${pre}eAmt" type="number" placeholder="0.00" style="width:100%"></div>
-    <div style="flex:1;min-width:100px"><div class="kpi-label mb8">Tipo</div><select class="sel" id="${pre}eType" style="width:100%"><option value="fijo">🔒 Fijo</option><option value="variable" selected>🔄 Variable</option></select></div>
-    <div style="flex:1;min-width:120px;position:relative">
-      <div class="kpi-label mb8">Categoría</div>
-      <div id="${pre}eCatDisplay" onclick="openCatPicker('${pre}')"
-        tabindex="0" onkeydown="catTriggerKey(event,'${pre}')"
-        style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--t1);outline:none;width:100%;box-sizing:border-box"
-        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
-        <span id="${pre}eCatIcon">🍽️</span>
-        <span id="${pre}eCatLabel" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Alimentación</span>
-        <span style="color:var(--t3);font-size:10px">▾</span>
-      </div>
-      <input type="hidden" id="${pre}eCat" value="Alimentación">
-    </div>
-    <!-- Recurrente toggle -->
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:9px;gap:4px;flex-shrink:0">
-      <label style="font-size:9px;color:var(--t3);white-space:nowrap">Recurrente</label>
-      <input type="checkbox" id="${pre}eRecurrente" checked title="Marcar si este pago se repite"
-        style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent)"
-        onchange="toggleRecFields('${pre}')">
-    </div>
-    <!-- Frecuencia + Selector de día (visibles solo si recurrente marcado) -->
-    <div id="${pre}recFields" style="display:flex;gap:8px;align-items:end;flex-shrink:0">
-      <div>
-        <div class="kpi-label mb8">Frecuencia</div>
-        <select class="sel" id="${pre}eFreq" onchange="onFreqChange('${pre}')" style="width:170px">${freqOpts}</select>
-      </div>
-      <div>
-        <div class="kpi-label mb8" id="${pre}eDayLabel">Día de pago</div>
-        <input type="number" id="${pre}eDayDisplay"
-          min="1" max="${new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).getDate()}"
-          value="1"
-          onclick="openDayPicker('${pre}')"
-          oninput="validateDayInput(this,'${pre}')"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();openDayPicker('${pre}')}"
-          style="padding:7px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--t1);width:65px;font-weight:700;outline:none;font-family:'JetBrains Mono',monospace;text-align:center;-moz-appearance:textfield"
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;align-items:end">
+      <div><div class="kpi-label mb4" style="font-size:10px">Concepto</div><input class="inp" id="${pre}eName" placeholder="Agua..." oninput="onSentenceCase(this)" style="width:100%;font-size:11px;padding:6px"></div>
+      <div><div class="kpi-label mb4" style="font-size:10px">Monto</div><input class="inp" id="${pre}eAmt" type="number" placeholder="0.00" style="width:100%;font-size:11px;padding:6px"></div>
+      <div><div class="kpi-label mb4" style="font-size:10px">Tipo</div><select class="sel" id="${pre}eType" style="width:100%;font-size:11px;padding:6px"><option value="fijo">Fijo</option><option value="variable" selected>Variable</option></select></div>
+      <div style="position:relative">
+        <div class="kpi-label mb4" style="font-size:10px">Categoría</div>
+        <div id="${pre}eCatDisplay" onclick="openCatPicker('${pre}')"
+          tabindex="0" onkeydown="catTriggerKey(event,'${pre}')"
+          style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;font-size:10px;color:var(--t1);outline:none;width:100%;box-sizing:border-box"
           onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
-        <input type="hidden" id="${pre}eDay" value="1">
-      </div>
-      <div id="${pre}customDaysWrap" style="overflow:hidden;width:0;transition:width .15s">
-        <div style="padding-left:8px">
-          <div class="kpi-label mb8">Cada (días)</div>
-          <input class="inp" id="${pre}eCustomDays" type="number" min="1" max="365" placeholder="14" style="width:70px" tabindex="-1">
+          <span id="${pre}eCatIcon">🍽️</span>
+          <span id="${pre}eCatLabel" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px">Alim.</span>
+          <span style="color:var(--t3);font-size:9px">▾</span>
         </div>
+        <input type="hidden" id="${pre}eCat" value="Alimentación">
       </div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px">
+        <label style="font-size:8px;color:var(--t3)">Rec.</label>
+        <input type="checkbox" id="${pre}eRecurrente" checked title="Recurrente"
+          style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)"
+          onchange="toggleRecFields('${pre}')">
+      </div>
+      <button class="btn" onclick="addExpense('${pre}')" style="padding:6px 10px;font-size:10px;white-space:nowrap;background:#ef4444;color:#fff;border-color:#ef4444;height:fit-content">Agregar</button>
     </div>
-    <button class="btn" onclick="addExpense('${pre}')" style="flex-shrink:0;align-self:flex-end;white-space:nowrap;padding:7px 14px;font-size:12px;background:#ef4444;color:#fff;border-color:#ef4444">+ Agregar</button>`;
+    <div id="${pre}recFields" style="display:none;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+      <div><div class="kpi-label mb4" style="font-size:10px">Frecuencia</div><select class="sel" id="${pre}eFreq" onchange="onFreqChange('${pre}')" style="font-size:11px;padding:6px">${freqOpts}</select></div>
+      <div><div class="kpi-label mb4" style="font-size:10px" id="${pre}eDayLabel">Día</div><input type="number" id="${pre}eDayDisplay" min="1" max="31" value="1" onclick="openDayPicker('${pre}')" oninput="validateDayInput(this,'${pre}')" style="padding:6px;font-size:11px;width:100%;text-align:center;-moz-appearance:textfield"></div>
+      <div id="${pre}customDaysWrap" style="overflow:hidden;width:0;transition:width .15s"><div><div class="kpi-label mb4" style="font-size:10px">Cada</div><input class="inp" id="${pre}eCustomDays" type="number" min="1" max="365" placeholder="14" style="width:100%;font-size:11px;padding:6px" tabindex="-1"></div></div>
+    </div>`;
 }
 
 function toggleRecFields(pre) {
@@ -823,7 +831,7 @@ function renderNav() {
   const tabs = [
     ["overview","📊 Resumen"],["expenses","💰 Ingresos & Gastos"],
     ["statement","🏦 Estados"],["invest","📈 Inversiones"],
-    ["analisis","🎯 Análisis"],["history","📂 Historial"],
+    ["comisiones","💰 Comisiones"],["analisis","🎯 Análisis"],["history","📂 Historial"],
   ];
   document.getElementById("navBar").innerHTML = tabs.map(([id,lbl]) =>
     `<button class="nav-btn ${S.tab===id?'active':''}" onclick="setTab('${id}')">${lbl}</button>`
@@ -835,7 +843,7 @@ function setMonth(m) { S.month = m; renderMonthBar(); renderAll(); } // legacy
 function setTab(t) {
   S.tab = t;
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-  const panelId = ["history","statement","expenses","invest","analisis"].includes(t) ? t : "overview";
+  const panelId = ["history","statement","expenses","invest","comisiones","analisis"].includes(t) ? t : "overview";
   document.getElementById("panel-" + panelId)?.classList.add("active");
   renderNav();
   renderAll();
@@ -848,6 +856,7 @@ function renderAll() {
   renderStatement();
   renderHistory();
   renderInvest();
+  renderComisiones();
   renderAnalisis();
 }
 
@@ -1343,12 +1352,12 @@ function renderExpenses() {
 
   // Income form HTML
   const incFormRow = `
-    <div style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:10px;align-items:end;flex-wrap:wrap">
-      <div><div class="kpi-label mb8">Concepto</div><input class="inp" id="iName" placeholder="Ej. Salario, Freelance..." oninput="onSentenceCase(this)"></div>
-      <div><div class="kpi-label mb8">Monto ($)</div><input class="inp" id="iAmt" type="number" placeholder="0.00" style="width:110px"></div>
-      <div><div class="kpi-label mb8">Tipo</div><select class="sel" id="iType"><option value="fijo">🔒 Fijo</option><option value="variable">🔄 Variable</option></select></div>
-      <div><div class="kpi-label mb8">Frecuencia</div><select class="sel" id="iFreq">${Object.entries(FREQS).map(([k,f])=>`<option value="${k}" ${k==="mensual"?"selected":""}>${f.icon} ${f.label}</option>`).join("")}</select></div>
-      <button class="btn btn-acc" onclick="addIncome()" style="margin-top:20px;white-space:nowrap;background:var(--green);border-color:var(--green)">+ Agregar</button>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;align-items:end">
+      <div><div class="kpi-label mb8">Concepto</div><input class="inp" id="iName" placeholder="Salario..." oninput="onSentenceCase(this)" style="font-size:12px"></div>
+      <div><div class="kpi-label mb8">Monto</div><input class="inp" id="iAmt" type="number" placeholder="0.00" style="font-size:12px"></div>
+      <div><div class="kpi-label mb8">Tipo</div><select class="sel" id="iType" style="font-size:12px"><option value="fijo">Fijo</option><option value="variable">Variable</option></select></div>
+      <div><div class="kpi-label mb8">Frecuencia</div><select class="sel" id="iFreq" style="font-size:12px">${Object.entries(FREQS).map(([k,f])=>`<option value="${k}" ${k==="mensual"?"selected":""}>${f.icon}</option>`).join("")}</select></div>
+      <button class="btn btn-acc" onclick="addIncome()" style="padding:8px 12px;font-size:12px;background:var(--green);border-color:var(--green);white-space:nowrap">Agregar</button>
     </div>`;
 
   // Income registered list (compact)
@@ -1412,16 +1421,16 @@ function renderExpenses() {
 
     <!-- GASTOS: formulario + lista -->
     <div class="card mb16" style="border:1px solid #ef444433">
-      <div class="flex jb ai" style="margin-bottom:12px">
-        <span style="font-size:13px;font-weight:700;color:var(--red)">💸 Gastos</span>
-        <div class="flex ai g6">
-          ${[['lista','📋 Lista'],['flujo','📅 Flujo']].map(([k,l])=>`
-            <button onclick="S.expView='${k}';renderExpenses()" style="padding:4px 10px;border-radius:7px;font-size:11px;cursor:pointer;border:1px solid ${S.expView===k?'var(--accent)':'var(--border)'};background:${S.expView===k?'var(--accent)22':'var(--bg-input)'};color:${S.expView===k?'var(--accent)':'var(--t2)'};">${l}</button>`).join('')}
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--red)">💸 Gastos</span>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap">
+            ${[['lista','📋 Lista'],['flujo','📅 Flujo']].map(([k,l])=>`
+              <button onclick="S.expView='${k}';renderExpenses()" style="padding:4px 8px;border-radius:7px;font-size:11px;cursor:pointer;border:1px solid ${S.expView===k?'var(--accent)':'var(--border)'};background:${S.expView===k?'var(--accent)22':'var(--bg-input)'};color:${S.expView===k?'var(--accent)':'var(--t2)'};">${l}</button>`).join('')}
+          </div>
         </div>
       </div>
-      <div style="overflow-x:auto">
-        <div style="display:flex;gap:8px;align-items:end;flex-wrap:nowrap;width:100%">${expFormHTML()}</div>
-      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px">${expFormHTML()}</div>
       ${tE > 0 ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #ef444422;text-align:right">
         <span style="font-size:11px;color:var(--t3)">Total mensual: </span>
         <span class="mono" style="font-size:13px;font-weight:700;color:var(--red)">-$${fmtMXN(tE)}</span>
@@ -2286,6 +2295,297 @@ function renderInvest() {
       ${invList}
     </div>`;
 }
+
+// ════════════════════════════════════════════════════════════
+//  COMISIONES
+// ════════════════════════════════════════════════════════════
+function renderComisiones() {
+  const el = document.getElementById("panel-comisiones");
+  if (!el) return;
+
+  const totalComisiones = S.comisiones.reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
+  const totalLitros = S.comisiones.reduce((s, c) => s + (parseFloat(c.litros) || 0), 0);
+  const promedioComision = S.comisiones.length > 0 ? (totalComisiones / S.comisiones.length).toFixed(2) : 0;
+
+  const comisionesList = S.comisiones.length === 0
+    ? `<div style="color:var(--t3);text-align:center;padding:20px;font-size:13px">Sin comisiones registradas</div>`
+    : `<div style="display:flex;flex-direction:column;gap:4px">
+        ${S.comisiones.map((c) => {
+          const com1 = parseFloat(c.comision1 || 0);
+          const com2 = parseFloat(c.comision2 || 0);
+          const totalRow = com1 + com2;
+          const litros = parseFloat(c.litros || 0);
+          const bgColor = c.pagado ? '#22c55e15' : '#ef444415';
+          const borderColor = c.pagado ? '#22c55e' : '#ef4444';
+          return `
+          <div style="display:grid;grid-template-columns:80px 120px 100px 100px 60px 40px 30px;gap:8px;align-items:center;padding:8px 10px;background:${bgColor};border-left:3px solid ${borderColor};border-radius:4px;font-size:11px">
+            <div style="font-weight:600;color:var(--t1)">${c.oc}</div>
+            <div style="color:var(--t2)">${c.producto}</div>
+            <div style="text-align:right;color:var(--t3)">${litros.toLocaleString('es')}</div>
+            <div style="text-align:right;font-weight:600;color:var(--accent)">$${totalRow.toFixed(2)}</div>
+            <input type="checkbox" id="pagado-${c.id}" ${c.pagado ? 'checked' : ''} onchange="togglePagado('${c.id}')" style="cursor:pointer;width:16px;height:16px;accent-color:${c.pagado ? '#22c55e' : '#ef4444'};justify-self:center">
+            <button onclick="toggleEditMode('${c.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;color:var(--accent)">✏️</button>
+            <button class="btn-del" onclick="deleteComision('${c.id}')" style="padding:2px;font-size:12px">✕</button>
+          </div>
+          
+          ${document.getElementById('editMode-' + c.id) ? `
+          <div id="editMode-${c.id}" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:8px;background:var(--bg-input);border-radius:4px;margin-bottom:4px">
+            <div><label style="font-size:10px;color:var(--t3)">$ Com 1</label><input type="number" id="edit-com1-${c.id}" value="${com1}" min="0.01" max="99.99" step="0.01" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
+            <div><label style="font-size:10px;color:var(--t3)">$ Com 2</label><input type="number" id="edit-com2-${c.id}" value="${com2}" min="0.01" max="99.99" step="0.01" style="width:100%;padding:4px;background:var(--border);border:1px solid var(--border-hi);border-radius:3px;color:var(--t1);font-size:10px"></div>
+            <button onclick="saveComisionEdit('${c.id}')" style="padding:4px 8px;background:var(--green);color:#000;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600">Guardar</button>
+            <button onclick="cancelEdit('${c.id}')" style="padding:4px 8px;background:var(--border-hi);color:var(--t1);border:none;border-radius:3px;cursor:pointer;font-size:10px">Cancelar</button>
+          </div>
+          ` : ''}
+          `;
+        }).join('')}
+      </div>`;
+
+  el.innerHTML = `
+    <div class="section-title" style="color:${S.userColor}">💰 Comisiones — ${S.user}</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px">
+      ${[
+        {label:"Total comisiones", value:`$${fmtMXN(totalComisiones)}`, color:"var(--green)", sub:`${S.comisiones.length} reg`},
+        {label:"Total litros", value:`${totalLitros.toFixed(2)} L`, color:"var(--blue)", sub:`Acumulado`},
+        {label:"Comisión promedio", value:`$${promedioComision}`, color:"var(--accent)", sub:"Por venta"},
+      ].map(k=>`<div style="background:linear-gradient(135deg,var(--bg-card),#0f1f35);border-radius:var(--radius);padding:8px 10px;border:1px solid ${k.color}33">
+        <div style="font-size:8px;color:var(--t3);font-family:'JetBrains Mono',monospace;letter-spacing:.4px;margin-bottom:2px">${k.label}</div>
+        <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:${k.color};margin-bottom:1px">${k.value}</div>
+        <div style="font-size:9px;color:var(--t3);font-family:'JetBrains Mono',monospace">${k.sub}</div>
+      </div>`).join("")}
+    </div>
+
+    <div class="card" style="border:1px solid var(--accent)33;margin-bottom:20px">
+      <div class="section-title" style="font-size:13px;margin-bottom:12px;text-align:center">➕ Agregar comisión</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+        <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">Fecha</div><input class="inp" id="comFecha" type="date" style="padding:8px;font-size:11px;width:100%;text-align:center"></div>
+        <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">OC</div><input class="inp" id="comOC" type="text" placeholder="4670" style="padding:8px;font-size:11px;text-align:center;width:100%"></div>
+        <div><div class="kpi-label mb4" style="font-size:10px;text-align:center">Producto</div>
+          <select class="sel" id="comProducto" style="width:100%;padding:8px;font-size:11px;text-align:center">
+            <option value="">Selecciona</option>
+            <option value="NAFTA NIXON">NAFTA NIXON</option>
+            <option value="ETANOL">ETANOL</option>
+            <option value="CAMPER">CAMPER</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">Litros</div><input class="inp" id="comLitros" type="number" min="1" max="99999" step="1" placeholder="0" style="padding:6px;font-size:10px;text-align:center" oninput="autoCalcComision1()"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Precio</div><input class="inp" id="comPrecio" type="text" maxlength="5" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center" oninput="formatPrecio(this)"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Com/Lt</div><input class="inp" id="comDatoAdicional" type="number" min="0.01" max="9.99" step="0.01" placeholder="0.00" style="padding:6px;font-size:10px;text-align:center" oninput="autoCalcComision1()"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ C1</div><input class="inp" id="comComision1" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center" oninput="updateTotal()"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ C2</div><input class="inp" id="comComision2" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" style="padding:6px;font-size:10px;text-align:center"></div>
+        <div><div class="kpi-label mb4" style="font-size:9px;text-align:center">$ Total</div><input class="inp" id="comTotalRef" type="number" min="0.01" max="99.99" step="0.01" placeholder="00.00" readonly style="padding:6px;font-size:10px;text-align:center;background:var(--bg-input);cursor:not-allowed"></div>
+      </div>
+      <div style="display:flex;justify-content:center">
+        <button class="btn btn-acc" onclick="addComision()" style="padding:10px 20px;font-size:13px;width:100%;max-width:250px">Agregar</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px;font-weight:600">📊 Comisiones - Pagadas vs Pendientes</span>
+      </div>
+      <div style="padding:20px">
+        ${(() => {
+          const pagadas = S.comisiones.filter(c => c.pagado).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
+          const pendientes = S.comisiones.filter(c => !c.pagado).reduce((s, c) => s + (parseFloat(c.comision1 || 0) + parseFloat(c.comision2 || 0)), 0);
+          const total = pagadas + pendientes;
+          const pagadaPct = total > 0 ? (pagadas / total * 100).toFixed(1) : 0;
+          const pendientePct = total > 0 ? (pendientes / total * 100).toFixed(1) : 0;
+          
+          return `
+            <div style="margin-bottom:16px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:12px;color:var(--t2)">✅ Pagadas</span>
+                <span style="font-size:13px;font-weight:700;color:#22c55e">$${fmtMXN(pagadas)} (${pagadaPct}%)</span>
+              </div>
+              <div style="width:100%;height:24px;background:var(--bg-input);border-radius:6px;overflow:hidden">
+                <div style="height:100%;width:${pagadaPct}%;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width 0.3s ease"></div>
+              </div>
+            </div>
+            
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="font-size:12px;color:var(--t2)">⏳ Pendientes</span>
+                <span style="font-size:13px;font-weight:700;color:#ef4444">$${fmtMXN(pendientes)} (${pendientePct}%)</span>
+              </div>
+              <div style="width:100%;height:24px;background:var(--bg-input);border-radius:6px;overflow:hidden">
+                <div style="height:100%;width:${pendientePct}%;background:linear-gradient(90deg,#ef4444,#dc2626);transition:width 0.3s ease"></div>
+              </div>
+            </div>
+            
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center;font-size:12px">
+              <div style="background:#22c55e15;padding:10px;border-radius:6px;border:1px solid #22c55e44">
+                <div style="color:var(--t3);margin-bottom:4px">Total Pagado</div>
+                <div style="font-size:14px;font-weight:700;color:#22c55e">$${fmtMXN(pagadas)}</div>
+              </div>
+              <div style="background:#ef444415;padding:10px;border-radius:6px;border:1px solid #ef444444">
+                <div style="color:var(--t3);margin-bottom:4px">Total Pendiente</div>
+                <div style="font-size:14px;font-weight:700;color:#ef4444">$${fmtMXN(pendientes)}</div>
+              </div>
+            </div>
+          `;
+        })()}
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;font-weight:600">Registro de comisiones</span>
+        <span class="mono" style="font-size:11px;color:var(--t3)">${S.comisiones.length} registros</span>
+      </div>
+      ${comisionesList}
+    </div>
+  `;
+
+  // Calcular total automáticamente
+  const comision1El = document.getElementById("comComision1");
+  const comision2El = document.getElementById("comComision2");
+  const totalRefEl = document.getElementById("comTotalRef");
+
+  if (comision1El && comision2El && totalRefEl) {
+    [comision1El, comision2El].forEach(el => {
+      el?.addEventListener("input", () => {
+        const com1 = parseFloat(comision1El.value) || 0;
+        const com2 = parseFloat(comision2El.value) || 0;
+        const total = com1 + com2;
+        totalRefEl.value = total.toFixed(2);
+      });
+    });
+  }
+
+  // Enfocar fecha al cargar
+  const fechaEl = document.getElementById("comFecha");
+  if (fechaEl && !fechaEl.value) {
+    fechaEl.value = new Date().toISOString().split('T')[0];
+  }
+
+}
+
+function addComision() {
+  const fecha = document.getElementById("comFecha")?.value;
+  const oc = document.getElementById("comOC")?.value;
+  const producto = document.getElementById("comProducto")?.value;
+  const litros = parseFloat(document.getElementById("comLitros")?.value) || 0;
+  const precio = parseFloat(document.getElementById("comPrecio")?.value) || 0;
+  const datoAdicional = document.getElementById("comDatoAdicional")?.value;
+  const comision1 = parseFloat(document.getElementById("comComision1")?.value) || 0;
+  const comision2 = parseFloat(document.getElementById("comComision2")?.value) || 0;
+
+  if (!fecha || !oc || !producto || litros <= 0) {
+    showToast("Completa todos los campos requeridos", "error");
+    return;
+  }
+
+  S.comisiones.push({ id: uid(), fecha, oc, producto, litros, precio, datoAdicional, comision1, comision2 });
+  
+  // Limpiar formulario
+  document.getElementById("comFecha").value = new Date().toISOString().split('T')[0];
+  document.getElementById("comOC").value = "";
+  document.getElementById("comProducto").value = "";
+  document.getElementById("comLitros").value = "";
+  document.getElementById("comPrecio").value = "";
+  document.getElementById("comDatoAdicional").value = "";
+  document.getElementById("comComision1").value = "";
+  document.getElementById("comComision2").value = "";
+  document.getElementById("comTotalRef").value = "";
+
+  saveUser();
+  renderComisiones();
+  showToast("✅ Comisión agregada", "success");
+}
+
+function deleteComision(id) {
+  S.comisiones = S.comisiones.filter(c => c.id !== id);
+  saveUser();
+  renderComisiones();
+  showToast("Comisión eliminada", "info");
+}
+
+function togglePagado(id) {
+  const comision = S.comisiones.find(c => c.id === id);
+  if (comision) {
+    comision.pagado = !comision.pagado;
+    saveUser();
+    renderComisiones();
+    showToast(comision.pagado ? "✅ Marcado como pagado" : "⏳ Marcado como pendiente", "success");
+  }
+}
+
+function toggleEditMode(id) {
+  const editEl = document.getElementById('editMode-' + id);
+  if (editEl) {
+    editEl.style.display = editEl.style.display === 'none' ? 'grid' : 'none';
+  } else {
+    renderComisiones();
+    setTimeout(() => {
+      const newEditEl = document.getElementById('editMode-' + id);
+      if (newEditEl) newEditEl.style.display = 'grid';
+    }, 50);
+  }
+}
+
+function saveComisionEdit(id) {
+  const comision = S.comisiones.find(c => c.id === id);
+  if (comision) {
+    const com1 = parseFloat(document.getElementById('edit-com1-' + id)?.value) || 0;
+    const com2 = parseFloat(document.getElementById('edit-com2-' + id)?.value) || 0;
+    
+    comision.comision1 = com1;
+    comision.comision2 = com2;
+    saveUser();
+    renderComisiones();
+    showToast("✅ Comisiones actualizadas", "success");
+  }
+}
+
+function cancelEdit(id) {
+  const editEl = document.getElementById('editMode-' + id);
+  if (editEl) {
+    editEl.style.display = 'none';
+  }
+}
+
+function formatPrecio(input) {
+  let value = input.value.replace(/[^0-9]/g, '');
+  
+  if (value.length >= 2) {
+    value = value.slice(0, 5); // máximo 99.99
+    const intPart = value.slice(0, -2);
+    const decPart = value.slice(-2);
+    input.value = intPart + '.' + decPart;
+  } else {
+    input.value = value;
+  }
+  
+  autoCalcComision1();
+}
+
+function autoCalcComision1() {
+  const comXLt = parseFloat(document.getElementById("comDatoAdicional")?.value) || 0;
+  const litros = parseFloat(document.getElementById("comLitros")?.value) || 0;
+  const com1 = (comXLt * litros).toFixed(2);
+  
+  const com1El = document.getElementById("comComision1");
+  if (com1El) {
+    com1El.value = com1;
+  }
+  
+  updateTotal();
+}
+
+function updateTotal() {
+  const com1 = parseFloat(document.getElementById("comComision1")?.value) || 0;
+  const com2 = parseFloat(document.getElementById("comComision2")?.value) || 0;
+  const total = (com1 + com2).toFixed(2);
+  
+  const totalEl = document.getElementById("comTotalRef");
+  if (totalEl) {
+    totalEl.value = total;
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 async function addIncome() {
   let name=document.getElementById("iName")?.value?.trim();
@@ -3426,6 +3726,7 @@ document.addEventListener("keydown", function(e) {
 // ════════════════════════════════════════════════════════════
 if (localStorage.getItem("app_pwd_set") === "true") {
   isFirstPasswordSet = true;
+  APP_PASSWORD = localStorage.getItem("app_pwd") || ""; // Recuperar contraseña guardada
 }
 
 // Enfocar el campo de contraseña automáticamente
